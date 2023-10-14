@@ -1,0 +1,15 @@
+# dharma.dv2
+
+/load dharma.dv2.agent
+
+/verbose=0
+/statusline=0
+/interactive=0
+
+/status
+
+what is your role?
+
+/interactive=1
+/verbose=1
+/statusline=1

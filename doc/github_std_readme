@@ -1,0 +1,30 @@
+DAVE:
+display the contents of an example README.me file in github standard format:
+HAL-2021:
+# Project Name
+
+A brief description of the project.
+
+## Getting Started
+
+Instructions on how to get the project up and running.
+
+## Prerequisites
+
+Any prerequisites or dependencies that need to be installed before the project can be used.
+
+## Installation
+
+Step-by-step instructions on how to install the project.
+
+## Usage
+
+Instructions on how to use the project.
+
+## Contributing
+
+Guidelines for contributing to the project.
+
+## License
+
+The license associated with the project.

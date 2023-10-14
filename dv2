@@ -1,0 +1,1004 @@
+#!/bin/bash
+#!shellcheck disable=SC2188,SC2034,SC1090,SC1091,SC2155,SC2154
+set -e
+shopt -s extglob globstar checkwinsize
+
+declare -- AUTHOR='Gary Dean, garydean@okusi.id'
+declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
+
+declare -- openai=$(command -v openai)
+declare -- less=$(command -v less)
+declare -- man=$(command -v man)
+
+declare -- PRG0;    PRG0=$(readlink -en -- "$0")
+declare -- PRGDIR;  PRGDIR=$(dirname "$PRG0")
+declare -- PRG;     PRG=$(basename "$PRG0")
+
+msg()      { (($#)) || return 0; echo -n "$PRG: "; echo "$@"; }
+msg.info() { >&2 msg "$@"; }
+msg.err()  { >&2 msg "$@"; }
+msg.die()  { >&2 msg "$@"; exit 1; }
+#declare -fx 'msg' 'msg.info' 'msg.err' 'msg.die'
+
+# _declarep() returns entire declare strings, + errors;
+# declarep() does not return errors.
+_declarep()  { (($#)) || return 1; 2>/dev/null declare -p "$@"; }
+declarep() {
+  (($#)) || return 0;
+  local -i _fieldstart="$1"
+  shift
+  (($#)) || return 0;
+  local -a _vars=()
+  while(($#)); do
+    _vars+=( "$(declare -p "$1" 2>/dev/null || echo '')" )
+    shift
+  done
+  local -- _line
+  for _line in "${_vars[@]}"; do
+    [[ -z "$_line" ]] && continue
+    ((_fieldstart>=1)) && _line="${_line/declare /}"
+    ((_fieldstart>=2)) && _line="${_line#* }"
+    echo "$_line"
+  done
+  unset _fieldstart _line _vars
+}
+
+
+# readline history -------------------------------------------------------------
+declare -- HISTFILE="${HOME}/.${PRG}_history"
+[[ -f "${HISTFILE:-}" ]] || touch "$HISTFILE"
+declare -- HISTCONTROL=ignoredups:ignorespace
+declare -- HISTFILESIZE=2000
+declare -- HISTSIZE=1000
+declare -- HISTTIMEFORMAT='%m-%d_%T '
+history -r "$HISTFILE"
+
+# interactive settings ---------------------------------------------------------
+declare -i verbose=1
+declare -i interactive
+interactive=$(  [ -t 0 ] && echo 1 || echo 0 )
+declare -i wordwrap
+declare -- less
+interactive_set() {
+  [[ -z "${1:-}" ]] && { _declarep interactive wordwrap less; return 0; }
+  if [[ $1 == 'on' ]] || (($1 > 0)); then
+    interactive=1
+    wordwrap=1
+    less=$(command -v less)
+  elif [[ $1 == 'off' ]] || (($1 == 0)); then
+    interactive=0
+    wordwrap=0
+    less=cat
+  fi
+}
+declare -fx 'interactive_set'
+interactive_set $interactive
+
+declare -i exit_on_completion=0
+
+declare -i auto_max_tokens=1
+
+# Note: After command line processing, languages becomes languages[].
+declare -- languages=English
+# Note: After command line processing, language becomes ->languages[0].
+declare -- language=English
+
+declare -- system='' user='' assistant=''
+
+declare -- primary_directive='Your role is to assist the user in whatever manner.'
+declare -n PD=primary_directive
+declare -a messages=()
+declare -- role='' content='' content1=''
+declare -- model=gpt-4
+declare -i token_limit=8000
+declare -i max_tokens=4000
+declare -- temperature=0.00729735256931
+declare -i n=1
+declare -- top_p=1
+declare -- stop=''
+
+declare -i used_tokens=0
+declare -i statusline=1
+
+declare -a Cmd_Cache=()
+
+declare -a CONF_FILES=()
+declare -- Conf_File=''
+declare -n AGENT_FILES=CONF_FILES
+declare -n Agent_File=Conf_File
+
+# READ stdlib ==========================================================
+source "$PRGDIR"/.sys_lib
+
+declare -a sys_vars=(
+    Agent_File
+    ''
+    system user assistant
+    ''
+    model
+    token_limit max_tokens auto_max_tokens
+    temperature top_p n stop
+    ''
+    verbose interactive wordwrap exit_on_completion less
+    ''
+    languages language
+    ''
+    HISTFILE
+    AGENT_FILES
+    CONF_FILES
+    ''
+    trap_INT trap_ERR trap_EXIT
+)
+
+# g_messages[] -----------------------------------------------------------------------------
+declare -a g_messages=()
+declare -i g_messages_len=0
+## LOAD AGENT FILE/s ==============================================================
+process_g_messages() {
+  # Transform messages[] -> g_messages[]
+  # Re-declare g_messages[]
+  unset g_messages g_messages_len
+  declare -ag g_messages=()
+  declare -ig g_messages_len=${#primary_directive}+10
+
+  local _line _role _content
+  for _line in "${messages[@]}"; do
+    _role=${_line%%:*}; role=${role,,}
+    if [[ -z "$_role" ]]; then
+      ((verbose>1)) && msg.info "${FUNCNAME[0]}: warning: blank 'role' field. Ignoring. But you might want to look at it."
+      continue
+    fi
+    if [[ ' system user assistant ' != *" $_role "* ]]; then
+      ((verbose>1)) && _declarep _line messages
+      msg.err "${FUNCNAME[0]}: Invalid role '$_role'"
+      return 1
+    fi
+    _content="${_line#*:}"
+    g_messages+=('-g' "$_role" "$(echo -ne "$_content")")
+    g_messages_len+=${#_content}+10
+  done
+  unset _line _role _content
+  return 0
+}
+
+load_agent_file() {
+  local -a _conf=()
+  while(($#)); do
+    ((verbose>1)) && msg.info "${FUNCNAME[0]}: Processing Agent $1..."
+    [[ -f "$1" ]] || {
+      ((verbose>1)) && msg.info "${FUNCNAME[0]}: file '$1' not found."
+      shift; continue
+    }
+    source "$1" || {
+      ((verbose>1)) && msg.err "${FUNCNAME[0]}: source '$1' failed."
+      shift; continue
+    }
+    process_g_messages || {
+      shift; continue
+    }
+    _conf+=("$1")
+    shift
+  done
+  AGENT_FILES=( "${_conf[@]}" )
+  ((verbose)) && msg.info "Agents (${AGENT_FILES[*]}) Loaded."
+  Agent_File=${AGENT_FILES[-1]}
+  unset _conf
+  return 0
+}
+
+# READ CONFIG/AGENT FILES =====================================================
+declare -- _file
+while (($#)) && [[ ${1:0:1} != '-' ]]; do
+  _file=$(readlink -fn "$1")
+  if [[ ! -f "$_file" ]]; then
+    _file=$(readlink -fn "${1}.dv2.agent")
+    if [[ ! -f "${_file}.dv2.agent" ]]; then
+      msg.die "File '$1' not found."
+    fi
+  fi
+  AGENT_FILES+=( "$_file" )
+  shift
+done
+unset _file
+echo "$(_declarep primary_directive)" >/tmp/$PRG
+load_agent_file "${AGENT_FILES[@]}"
+echo "$(_declarep primary_directive)" >>/tmp/$PRG
+
+# ON ERROR --------------------------------------------------------------------
+# on_error=continue|resume|ignore|stop|exit
+# default is exit (~set -e)
+declare -- on_error='exit'
+# trap EXIT
+trap_exit() {
+  local -i err=$?
+  (($#)) && err=$1
+  exec 0</dev/tty
+  ((verbose && err && err!=4)) && msg.err "error: $err"
+  exit "$err"
+}
+trap 'trap_exit' EXIT
+declare -r trap_EXIT="$(trap -p EXIT)"
+# trap ERR
+trap_error() {
+  case "$on_error" in
+    exit)
+      ((verbose)) && msg.err 'aborting.'
+      return 1
+      ;;
+    stop)
+      ((verbose && ${#Cmd_Cache[@]})) \
+        && msg.err 'script mode stopped.'
+      Cmd_Cache=()
+      return 0
+      ;;
+    continue|ignore|resume)
+      ((verbose)) && msg.err "${on_error:0:-1}ing..."
+      return 0
+      ;;
+  esac
+  return 0
+}
+trap 'trap_error; ret_value=$?; [ $ret_value -eq 1 ] && exit 1' ERR
+declare -r trap_ERR="$(trap -p ERR)"
+# trap int (ctrl-c)
+trap_int() {
+  ((verbose && interactive)) && >&2 echo
+  exit 4
+}
+trap 'trap_int' SIGINT
+declare -r trap_INT="$(trap -p SIGINT)"
+
+set +e
+## NOTE: all untrapped errors from now on
+##       are handled by trap_error().
+# -- end on_error --------------------------------------------------
+
+
+#===================================================================
+main() {
+  local arg1=''
+  while (($#)); do
+    # var=value arguments
+    if [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+      arg1="${1%=*}"
+      arg1=${arg1//-/_}
+      [[ -z "$(_declarep "$arg1")" ]] \
+          && { msg.err "Invalid variable declaration '$1'"; return 1; }
+      eval "$1" || return 1
+      shift
+      continue
+    fi
+    #shellcheck disable=SC2206
+    case "$1" in
+      -m|--model) shift; model=${1:-$model}
+                  ;;
+      -t|--temperature)
+                  shift; temperature=${1:-0.0072973525693}
+                  ;;
+      -g|--message)
+                  shift; role="${1:-system}"; role=${role,,}
+                  [[ $role == 'system' || $role == 'user' || $role == 'assistant' ]] \
+                      || { msg.err "Invalid -g option '$role'. Must be system, user, or assistant"; return 22; }
+                  shift; content="${1:-}"
+                  [[ -n "$content" ]] \
+                      && messages+=( "$role: $content" )
+                  ;;
+      -k|--token-limit|--token_limit)
+                  shift; token_limit=${1:- $token_limit}
+                  ;;
+      -M|--max-tokens|--max_tokens)
+                  shift; max_tokens=${1:- $token_limit}
+                  ;;
+      -c|--command|--cmd)
+                  shift
+                  [[ -n "${1:-}" ]] && Cmd_Cache+=( "$1" )
+                  ;;
+      -x|--exit_on_completion|--quit|--exit)
+                  Cmd_Cache+=( '/exit' )
+                  exit_on_completion=1
+                  ;;
+      -L|--languages)
+                  shift; languages=( ${1//,/ } )
+                  ;;
+      -l|--language)
+                  shift; languages+=( ${1//,/ } )
+                  ;;
+      -w|--wordwrap)
+                  shift; wordwrap=${1:-1}
+                  ;;
+      -v|--verbose)
+                  ((verbose<=0)) && verbose=1 || verbose+=1
+                  ;;
+      -q|--quiet) ((verbose<=0)) && verbose=0 || verbose+=-1
+                  ;;
+      -i|--interactive)
+                  interactive_set 1
+                  ;;
+      -y|--not-interactive)
+                  interactive_set 0
+                  ;;
+      -a|--auto-max-tokens)
+                  auto_max_tokens=1
+                  ;;
+      -A|--no-auto-max-tokens)
+                  auto_max_tokens=0
+                  ;;
+      -N|--statusline) statusline=0
+                  ;;
+      -V|--version)
+                  echo "$PRGVER"; return 0
+                  ;;
+      -h|--help)  usage; return 0
+                  ;;
+      -[mtgkMcxLlwvqiyaANVh]*) #shellcheck disable=SC2046 # de-aggregate aggregated short options
+                  set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
+                  ;;
+      -?|--*)     msg.err "Invalid option '$1'"
+                  return 22
+                  ;;
+      *)          msg.err "Invalid argument '$1'"
+                  return 2
+                  ;;
+    esac
+    shift
+  done
+
+  # suck any stdin into Cmd_Cache[] -----------------------------------------------
+  if [[ ! -t 0 ]]; then
+    # Save current stdin to a new file descriptor 3
+    exec 3<&0
+    # Read from the original stdin (now on fd 3)
+    while read -u 3 -r _line; do
+      ([[ -z "$_line" ]] || [[ "${_line:0:1}" == '#' ]]) && continue
+      Cmd_Cache+=( "$_line" )
+    done
+    # Restore stdin to terminal for further input
+    exec 0</dev/tty
+  fi
+  ((exit_on_completion)) && Cmd_Cache+=( '/exit' )
+
+  # Grant default user names for terminal display.
+  [[ -z "$system" ]]    && system="$PRG"
+  [[ -z "$user" ]]      && user="$USER@$HOSTNAME"
+  [[ -z "$assistant" ]] && assistant="$model"
+
+  local -- cmd_type='/'
+
+  # main loop =========================================================
+  while((1)); do
+    used_tokens=$((g_messages_len / 4))
+    while ((1)); do
+      # -- line off--------------------------------------------
+      if ((verbose && statusline)); then
+        local _prompt="#!$system $USER@$HOSTNAME:"
+        (( ${#PWD} > 43 )) \
+            && _prompt+="...${PWD: -40}" \
+            || _prompt+="$PWD"
+        ((UID)) && _prompt+='$' || _prompt+='#'
+        _prompt+=" -- $used_tokens/$token_limit"
+        (( (token_limit - max_tokens - used_tokens) < $((token_limit/10)))) \
+            && _prompt+='!!'
+        echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
+        unset _prompt
+      fi
+
+      # Command Cache -----------------------------------------
+      if ((${#Cmd_Cache[@]})); then
+        if [[ -n ${Cmd_Cache[0]} ]]; then
+          content=${Cmd_Cache[0]}
+          ((verbose)) && {
+            echo
+            echo "$user: $content"
+          }
+        fi
+        unset 'Cmd_Cache[0]'
+        Cmd_Cache=("${Cmd_Cache[@]:1}")
+      else
+        # Interactive ------------------------------------------
+        echo
+        while((1)); do
+          read -er -i "$cmd_type" -p "$PRG: $user: " content
+          # Ignore blank lines and #comment lines
+          [[ -z "$content" || ${content:0:1} == '#' ]] && continue
+          break
+        done
+        # Is it a DV script /command?
+        if [[ ${content:0:1} == '/' ]]; then
+          cmd_type='/'
+          [[ $content == '/' ]]  && { print_script_command_help; continue; }
+          [[ $content == '//' ]] && { $man "$PRG"; continue; }
+          if [[ ${content:0:2} == '/!' ]]; then
+            content=${content:1}
+            cmd_type='!'
+            ((${#content})) || content="/$SHELL"
+            content="/shell ${content:1}"
+          fi
+        # Is it a shell !command?
+        elif [[ ${content:0:1} == '!' ]]; then
+          cmd_type='!'
+          ((${#content})) || content="/$SHELL"
+          content="/shell ${content:1}"
+        # Otherwise, it's for GPT.
+        else
+          cmd_type=''
+        fi
+        history -s "$content"; history -a "$HISTFILE"
+      fi
+
+      ## /COMMANDS ----------------------------------------------------
+      # / signifies a command follows.
+      #shellcheck disable=SC2207
+      if [[ ${content:0:1} == '/' ]]; then
+        ((${#content} > 1)) || { $man "$PRG"; continue; }
+        [[ "$content" == *" "* ]] || content="$content "
+        cmd="${content:1}"
+        cmd="${cmd%% *}"
+        cmd_args="${content#* }"
+        on_error='stop'
+        case "$cmd" in
+          quit|exit|q)
+              if ((change_flag && interactive)) && [[ ${cmd_args,,} != 'now' ]]; then
+                msg "$PRG: This session has not been saved."
+                read -r -n 1 -i y -p "$PRG: Do you wish to save it? y/n "
+                echo
+                [[ "$REPLY" == 'y' ]] || return 0
+                Cmd_Cache+=( '/save' )
+              else
+                return 0
+              fi
+              ;;
+          interactive)
+              interactive_set "${cmd_args}"
+              ;;
+          edit)
+              ((!interactive)) && continue
+              local _file
+              # /edit messageNo
+              if [[ $cmd_args =~ ^[0-9]+$ ]]; then
+                local -i _g_message_no=$((cmd_args * 3))
+                _file=$(mktemp --suffix="-msg-$cmd_args-${g_messages[_g_message_no+1]}")
+                echo "${g_messages[_g_message_no+2]}" > "$_file"
+                dv_shell "$EDITOR ${_file}" resume stop
+                if [[ -s "${_file}" ]]; then
+                  read -r -n 1 -i y -p "$PRG: Replace message #$cmd_args with '$_file'? y/n "
+                  if [[ "$REPLY" == 'y' ]]; then
+                    g_messages[_g_message_no+2]=$(cat "$_file")
+                    ((verbose)) && Cmd_Cache+=( "/list $cmd_args" )
+                  fi
+                fi
+                rm -f "$_file"
+                unset _file _g_message_no
+                continue
+              fi
+              ###
+              _file="$cmd_args"
+              local -i _oneshot=0
+              # /edit with empty _file == long command
+              if [[ -z "$_file" ]]; then
+                _file=$(mktemp)
+                _oneshot=1
+              fi
+              dv_shell "$EDITOR ${_file}" resume stop
+              if [[ -s "$_file" && -r "$_file" ]]; then
+                #/edit (oneshot)
+                if ((_oneshot)); then
+                  local -- _oneshot_cmd
+                  _oneshot_cmd="$(cat "$_file")"
+                  rm -f "$_file"
+                  (( ${#_oneshot_cmd} < 2048 )) && history -s "$_oneshot_cmd"
+                  Cmd_Cache+=( "$_oneshot_cmd" )
+                  unset _oneshot_cmd _file _oneshot
+                  break
+                fi
+                unset _oneshot
+
+                if ((interactive)); then
+                  read -r -n 1 -i y -p "$PRG: Execute '$_file'? y/n "
+                  [[ "$REPLY" == 'y' ]] || { unset _file; continue; }
+                fi
+                local -- _e
+                local -a _ecmd=()
+                mapfile -t _ecmd < "$_file"
+                for _e in "${_ecmd[@]}"; do Cmd_Cache+=("$_e"); done
+                unset _e _ecmd
+              fi
+              unset _file _oneshot
+              ;;
+          cd|chdir)
+              cd "$cmd_args" || { msg.err "Failed to cd into '$cmd_args'"; }
+              ;;
+          shell)
+              dv_shell "$SHELL -c '$cmd_args'" resume stop
+              ;;
+          status) (
+              echo "# $PRGVER"
+              local _var _str=''
+              for _var in "${sys_vars[@]}"; do
+                [[ -z "$_var" ]] && { echo; continue; }
+                _str=$(_declarep "$_var" \
+                  || { msg.err "Variable '$_var' not found."; echo ''; } )
+                [[ -z "$_str" ]] && continue
+                echo -n '    '
+                echo "$_str" | cut -d' ' -f2-
+              done
+              if [[ $cmd_args == 'all' ]]; then
+                echo
+                echo '# GLOBAL_VARS[@]'
+                for _var in "${GLOBAL_VARS[@]}"; do
+                  [[ -z "$_var" ]] && { echo; continue; }
+                  _str=$(_declarep "$_var" || { msg.err "Variable '$_var' not found."; echo ''; } )
+                  [[  -z "$_str" \
+                      || "$_str" == *"$LF"* \
+                      || "$_str" == *'GLOBAL_VARS'* ]] \
+                    && continue
+                 echo -n '    '
+                 echo "$_str" | cut -d' ' -f2-
+                done
+              fi ) | $less
+              unset _var _str
+              ;;
+          models|engines)
+              [[ ${cmd_args,,} == 'update' ]] && get_openai_models 1
+              ((interactive)) || { printf '%s\n' "${Models[@]}"; continue; }
+              local -i _i _j _sel
+              for((_i=0; _i<${#Models[@]}; _i++)); do
+                _j=$((_i+1))
+                printf '%s) %s\n' "$_j" "${Models[$_i]}"
+              done
+              echo
+              read -rp "$PRG: Select Model 0|1-${#Models[@]} " _sel
+              ( [[ -z "$_sel" || $_sel == 'q' ]] \
+                  || (( _sel == 0 || _sel > ${#Models[@]} ))
+              ) && continue
+              model="${Models[_sel-1]}"
+              token_limit=$(context_window "$model")
+              continue
+              ;;
+          list)
+              [[ -z "$cmd_args" ]] && cmd_args='all'
+              local -a _nums
+              _nums=( $(int_list "$cmd_args" 0 "$(( (${#g_messages[@]}/3)-1 ))" 0) ) \
+                  || { unset _nums; continue; }
+              local -i _i _ii
+              (for _i in "${_nums[@]}"; do
+                _ii=(_i*3)
+                if ((interactive && wordwrap)); then
+                  printf '%d) %s: %s\n' "$_i" "${g_messages[$((_ii+1))]}" "${g_messages[$((_ii+2))]}" | fmt -w ${COLUMNS:-80}
+                else
+                  printf '%d) %s: %s\n' "$_i" "${g_messages[$((_ii+1))]}" "${g_messages[$((_ii+2))]}"
+                fi
+                ((verbose)) && echo
+              done) | $less
+              unset _i _ii _nums
+              ;;
+          clear)
+              messages=()
+              process_g_messages
+              AGENT_FILES=( "$Agent_File" )
+              ;;
+          delete)
+              [[ -z "$cmd_args" ]] \
+                  && { msg.err "delete: No message number/s specified."; continue; }
+              local -a _nums
+              _nums=( $(int_list "$cmd_args" 1   "$(( (${#g_messages[@]}/3)-1 ))" 0) ) \
+                || continue
+              ((interactive)) && {
+                read -r -i n -n 1 -p "$PRG: Delete messages (${_nums[*]})? y/n "
+                [[ "$REPLY" != 'y' ]] && continue
+              }
+              local -- _msg
+              local -i _i _ii
+              for _i in "${_nums[@]}"; do
+                _ii=$((_i * 3))
+                unset "g_messages[$_ii]" "g_messages[$((_ii+1))]" "g_messages[$((_ii+2))]"
+                ((verbose && interactive)) && msg.err "Message #${_i} (->g_${_ii}) deleted"
+              done
+              # Remove unset elements from the array
+              g_messages=( "${g_messages[@]:+${g_messages[@]}}" )
+              _msg="${g_messages[*]}" # Concatenate all the strings in g_messages
+              # Calculate the total length for token calcs
+              g_messages_len=${#primary_directive}+${#_msg}+10
+              unset _i _ii _nums _msg
+              change_flag=1
+              ;;
+          agents)
+              [[ -z "$cmd_args" ]] && cmd_args=$PWD
+              local _dir
+              local -a _files=()
+              _files=( $( \
+                ( for _dir in $PRGDIR /etc/default $HOME/.$PRG $cmd_args ; do
+                    find "$_dir" \
+                      -maxdepth 1 \
+                      \( -name "*dv2.conf" -o -name "*.agent" \) \
+                      -type f 2>/dev/null
+                  done
+                ) | sort -u)
+              )
+              local _ccc=0 _sel=0
+              if (( ! (interactive && wordwrap) )); then
+                printf '%s\n' "${_files[@]}"
+                continue
+              fi
+              while((1)); do
+                _ccc=0
+                for _dir in "${_files[@]}"; do
+                  echo "$((++_ccc)) $_dir"
+                done
+                echo
+                read -rp "$PRG: $(basename "$EDITOR") 0|1-${#_files[@]} " _sel
+                ( [[ -z "$_sel" || $_sel == 'q' ]] \
+                    || (( _sel == 0 || _sel > ${#_files[@]} ))
+                ) && break
+                dv_shell "$EDITOR ${_files[$((_sel-1))]}" resume stop
+              done
+              unset _dir _ccc _sel _files
+              ;;
+          load)
+              [[ -f $cmd_args ]] || { msg.err "${FUNCNAME[0]}: Agent File '$cmd_args' not found."; continue; }
+              load_agent_file "$cmd_args"
+              change_flag=1
+              ;;
+          scripts)
+              local -- _dir
+              local -a _dirs=() _files=()
+              local -i _ccc=0 _sel=0
+              [[ -z "$cmd_args" ]] \
+                  && _dirs=( "$PWD" "$PRGDIR" "$HOME/.$PRG" ) \
+                  || _dirs=( $(readlink -fn -- "$cmd_args") )
+              _files=( $( \
+                ( for _dir in "${_dirs[@]}"; do
+                    [[ -d "$_dir" ]] || continue
+                    find "$_dir" \
+                      -maxdepth 1 \
+                      -name "*.dv2" \
+                      -type f 2>/dev/null || true
+                  done
+                ) | sort -u)
+              )
+              ((${#_files[@]})) || continue
+              ((interactive)) || { printf '%s\n' "${_files[@]}"; continue; }
+              while((1)); do
+                _ccc=0
+                for _dir in "${_files[@]}"; do
+                  echo "$((++_ccc)) $_dir"
+                done
+                echo
+                read -rp "$PRG: $(basename "$EDITOR") 0|1-${#_files[@]} " _sel
+                ( [[ -z "$_sel" || $_sel == 'q' ]] \
+                    || (( _sel == 0 || _sel > ${#_files[@]} ))
+                ) && break
+                dv_shell "$EDITOR ${_files[$((_sel-1))]}" resume
+              done
+              unset _dir _dirs _files _ccc _sel
+              ;;
+          save)
+              local -- _filename
+              ((interactive)) \
+                && read -er -i "$cmd_args" -p "$PRG: Enter filename: " _filename
+              [[ -z "$_filename" ]] && continue
+              if [[ -f "$_filename" ]]; then
+                ((interactive)) && {
+                  read -r -n 1 -i n -p "$PRG: '$_filename' exists. Overwrite? y/n "
+                  [[ "$REPLY" == 'y' ]] || continue
+                }
+              fi
+              #shellcheck disable=SC2094
+              unset messages
+              declare -ag messages=()
+              local -i _i
+              for (( _i=0; _i<${#g_messages[@]}; _i+=3 )); do
+                messages+=( "${g_messages[$((_i+1))]}:${g_messages[$((_i+2))]//$'\n'/\\n}" )
+              done
+              local -- _msg
+              ( echo "#!/bin/bash"
+                echo
+                echo "# Agent '$(basename "$_filename")'"
+                echo "# Generated from $PRG session "
+                echo "# with Agent '$(basename -- "$Agent_File")'"
+                echo "# $(date -Is)"
+                echo
+                declarep 2 system
+                echo
+                declarep 2 user assistant
+                echo
+                declarep 2 model token_limit max_tokens auto_max_tokens temperature n top_p stop
+                echo
+                declarep 2 verbose interactive wordwrap less
+                echo
+                #declarep 2 languages
+                echo -n 'languages=( '
+                for _msg in "${languages[@]}"; do
+                  _msg="${_msg//\"/\\\"}"
+                  [[ $_msg == *" "* ]] && echo -n "\"$_msg\" " || echo -n "$_msg "
+                done
+                echo ')'
+                echo
+                declarep 2 primary_directive
+                echo
+                #declarep 2 messages
+                echo 'messages=('
+                for _msg in "${messages[@]}"; do
+                  _msg="${_msg//\"/\\\"}"
+                  echo "\"$_msg\" "; echo
+                done
+                echo ')'
+                echo
+                echo '#fin'
+              ) > "$_filename"
+              unset _filename _i
+              process_g_messages
+              change_flag=0
+              ;;
+          *)  # Process variable-assignment arguments first
+              local -- _arg1
+              content1="${content:1}"
+              content1="${content1%"${content1##*[^[:space:]]}"}"
+              if [[ "$content1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+                _arg1="${content1%=*}"
+                _arg1=${_arg1//-/_}
+                if [[ -v "$_arg1" ]]; then
+                  on_error='resume'
+                  eval "$content1" || msg.err "eval fail for command '/$content1'"
+                  on_error='stop'
+                else
+                  msg.err "Variable '$_arg1' is not present in $PRG"
+                fi
+              # If the cmd resembles a public system variable,
+              # try to print it out.
+              elif [[ "$content1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+                _arg1=$( declarep 2 "$content1" || echo '')
+                if [[ -z "$_arg1" ]]; then
+                  _arg1=$( declare -Fp "$content1" 2>/dev/null || echo '')
+                  if [[ -z "$_arg1" ]]; then
+                    msg.err "Variable/Function '$content1' not found."
+                  else
+                    eval "$content1" || msg.err "eval fail for command '/$content1'"
+                  fi
+                else
+                  echo "$_arg1"
+                fi
+              else
+                msg.err "Invalid command '$cmd' |$content1|"
+              fi
+              on_error='stop'
+              unset _arg1
+              ;;
+        esac
+        continue
+      fi
+      ##
+      break
+    done
+    on_error='exit'
+
+    # INIT user content into conversation stream
+    g_messages+=( '-g' user "$content" )
+    g_messages_len+=${#content}+8
+
+    # Organise Tokens
+    token_limit=$(context_window "$model")
+    used_tokens=$((g_messages_len / 4))
+    ((max_tokens > token_limit)) && max_tokens=$token_limit
+    if ((auto_max_tokens)); then
+      if (( (max_tokens+used_tokens) > token_limit )); then
+        max_tokens=$((token_limit - used_tokens - 200))
+        if ((max_tokens < 200)); then
+          ((verbose)) && msg.err "You have exceeded the token limit for this session."
+          ((max_tokens < 200)) && max_tokens=200
+        fi
+        ((verbose)) && msg.info "max_tokens auto-adjusted to $max_tokens (used=${used_tokens} limit=${token_limit})"
+      fi
+    fi
+
+    # Call openai
+    local -- _PD_expanded
+    eval "_PD_expanded=\"${primary_directive}\""
+    # Print the expanded directive
+    #echo "$directive_expanded"
+    content=$($openai api chat_completions.create \
+        --model        "$model" \
+        --n            "$n" \
+        --max-tokens   "$max_tokens" \
+        --temperature  "$temperature" \
+        --top_p        "$top_p" \
+        --stop         "$stop" \
+        -g system "$_PD_expanded" \
+        "${g_messages[@]}" \
+        || content=''
+    )
+    unset _PD_expanded
+    if [[ -n $content ]]; then
+      change_flag=1
+      g_messages+=( '-g' assistant "$content" )
+      g_messages_len+=${#content}
+      ((verbose)) && echo
+      if ((interactive && wordwrap)); then
+        echo "$assistant: $content" | fmt -w ${COLUMNS:-78} | $less
+      else
+        echo "$assistant: $content"
+      fi
+    fi
+
+    history -a "$HISTFILE"
+
+    # If the command cache is empty and
+    # we are in not interactive, exit
+    ((${#Cmd_Cache[@]} == 0 && ! interactive)) && break
+  done
+}
+
+# Shell -------------------------------------------------------------------------------
+#shellcheck disable=SC2064
+dv_shell() {
+#  local -i verbose_old=${verbose:-0}
+#  verbose=0
+  on_error="${2:-resume}"
+  trap - SIGINT EXIT ERR
+  ( eval "${1:-bash}" ) || true
+  set +e ## NOTE
+  trap "$trap_EXIT" EXIT
+  trap "$trap_ERR"  ERR
+  trap "$trap_INT"  SIGINT
+  on_error="${3:-stop}"
+#  verbose=$verbose_old
+}
+
+
+# Models ---------------------------------------------------------------------------
+declare -a Models=()
+get_openai_models() {
+  local -i force=${1:-0}
+  local -- engines_file="$PRGDIR"/openai.engines.list
+  if [[ -f "$engines_file" ]] && ((force==0)); then
+    Models=( $(cat -s "$engines_file") )
+  else
+    Models=( $($openai api engines.list \
+              |grep '"id":' |sed 's/"id"://; s/",//' \
+              |tr -d '" ' | grep ^gpt- |sort) ) \
+      && printf '%s\n' "${Models[@]}" >"$engines_file"
+  fi
+}
+get_openai_models 0
+
+# Context Window ("token_limit") ---------------------------------------------------
+context_window() {
+  local -i k=2000
+  (($#)) || { echo -n "$k"; return 0; }
+  [[ "$1" =~ ^gpt-.*-([0-9]+)k ]] \
+    && { echo -n "${BASH_REMATCH[1]}000"; return 0; }
+  local -a arr=()
+  readarray -t -d '-' arr <<<"$1"
+  ((${#arr[@]})) && arr[-1]="${arr[-1]%$'\n'}"
+  if    [[ ${arr[1]} == '4' ]];   then k=8000
+  elif  [[ ${arr[1]} == '3.5' ]]; then k=4000
+  fi
+  echo -n "$k"
+}
+token_limit=$(context_window "$model")
+
+# Help ------------------------------------------------------------
+usage() {
+cat <<EOT
+# DéjàVu-DéjàVu - AI Chatbot/Scriptbot for Bash terminal - ver $version
+
+__"it's dejavu all over again."__
+
+AI Agent creation and scripting for Bash terminal using openAI GPT models.
+
+## Usage
+
+  $PRG [agent] [-options] [<file]
+
+  agent     Agent file (with '.$PRG.agent' filename extension).
+            Optional, Positional; must be first argument,
+            before any other options.
+
+  file      script.$PRG file, via stdin.
+
+## Options
+
+  -m|--model "model"
+            openai [model=$model]
+
+  -k|--token_limit N
+            context window [token limit=$token_limit]
+            Usually calculated automatically (see --auto-max-tokens).
+
+  -M|--max_tokens N
+            response tokens [max_tokens=$max_tokens]
+            Usually calculated automatically (see --auto-max-tokens).
+
+  -t|--temperature N.N
+            [temperature=$temperature]
+
+  -g|--message system|user|assistant "content..."
+            eg, -g user "How did I get here?"
+
+  -c|--command|--cmd "[/]cmd"
+            Add $PRG /slash command _or_ gpt user prompt to command
+            stack (Cmd_Cache[]).
+            Can be used multiple times.
+
+  -L|--languages "lang1,lang2,..."
+            [languages='${languages[*]}']
+
+  -x|--exit_on_completion|--exit
+            Exit upon completion of commands/script.
+            [exit_on_completion='$exit_on_completion']
+
+  -v|--verbose
+            verbose=1 [verbose=$verbose]
+  -q|--quiet
+            verbose=0
+
+  -N|--statusline
+            statusline=0 [statusline=$statusline]
+
+  -i|--interactive
+            interactive=1 [interactive=$interactive]
+            yes-no prompts are enabled.
+
+  -y|--not-interactive
+            interactive=0
+            yes-no prompts are disabled; default y.
+
+  -a|--auto-max-tokens
+            auto_max_tokens=1 [auto_max_tokens=$auto_max_tokens]
+            Enable dynamic calculation of max_tokens to
+            maximum available.
+
+  -A|--no-auto-max-tokens
+            auto_max_tokens=0
+            Disable dynamic calculation of max_tokens.
+
+  -a|--autosave on|off
+            If on, upon exit, append current conversation to current
+            DV2 script. Default is off.
+
+  -u|--upgrade
+             Upgrade DéjàVu from git repository.
+             Git repository is set to:
+                $URL
+
+  -V|--version
+            [version="$PRGVER"], exit
+
+  -h|--help
+            This help, exit
+EOT
+}
+
+# -- Script Command Help Text ---------------------------------------------------
+declare -- Script_Command_Help=''
+get_script_command_help() {
+  local -- _line
+  local -a _man
+  readarray -t _man < <($man dv2)
+  local -i _i
+  #shellcheck disable=SC2167,SC2165
+  for((_i=0; _i<${#_man[@]}; _i++)); do
+    _line=${_man[$_i]}
+    if [[ "$_line" == 'DV2 Script Commands' ]]; then
+      echo "$_line"
+      for((_i=_i+1; _i<${#_man[@]}; _i++)); do
+        _line=${_man[$_i]}
+        # NOTE: Need to watch this for changes.
+        [[ "$_line" == 'Prompt Engineering'  ]] && break 2
+        [[ ${_line:0:8} == '        ' ]] \
+          && echo "${_line:8}" \
+          || echo "${_line}"
+      done
+      break
+    fi
+  done
+  unset _man _i _line
+}
+print_script_command_help() {
+  [[ -z "$Script_Command_Help" ]] \
+    && Script_Command_Help=$(get_script_command_help)
+  echo "$Script_Command_Help" | $less
+}
+
+
+main "$@"
+#fin
