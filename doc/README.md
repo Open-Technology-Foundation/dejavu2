@@ -1,4 +1,4 @@
-% DV2(1) DéjàVu-DéjàVu Chatbot/Scriptbot | Version 0.4.20
+% DV2(1) DéjàVu-DéjàVu Chatbot/Scriptbot | Version 0.4.21
 % Gary Dean, garydean@okusi.id
 % Oct 2023
 
