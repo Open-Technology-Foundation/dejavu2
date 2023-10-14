@@ -1,0 +1,35 @@
+#!/bin/bash
+#set -e
+
+g-s-a.short_name() {
+  local path dirname='' ext='' wp p='' w
+  path=$1
+  # extract dirname
+  [[ "$path" == *"/"* ]] && dirname=${path%/*}
+  ((${#dirname})) \
+      && { dirname="$dirname"/; path=${path##*/}; }  
+  # if nothing left of path, or if path[0] == '.', exit.  
+  ((${#path}==0)) || [[ ${path:0:1} == '.' ]] \
+      && { echo -n "$1"; return 0; }
+  # extract extension
+  [[ "$path" == *"."* ]] && ext=${path#*.}
+  ((${#ext})) && [[ "${ext:0:1}" != '.' ]] && ext=."$ext"
+  # get the string without the ext, and convert _ to ' '  
+  wp=${path%$.*}; wp=${wp//\//_}
+  ((${#wp})) || { echo -n "$1"; return 0; }
+  # create the abbreviation from path
+  IFS='-'; for w in ${wp,,}; do p+="${w::1}-"; done
+  ((${#p})) && p=${p::-1}
+  echo -n "${dirname}${p}${ext}"
+}
+declare -fx 'g-s-a.short_name'
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  [[ -z "$1" || "${1,,}" == '-h' || "${1,,}" == '--help' ]] \
+      && { echo "usage: $(basename "$0") string [...]"; exit 1; }
+  for str in "$@"; do
+    g-s-a.short_name "$str"; echo
+  done
+fi
+
+#fin

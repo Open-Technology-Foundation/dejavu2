@@ -45,13 +45,19 @@ declarep() {
 
 
 # readline history -------------------------------------------------------------
-declare -- HISTFILE="${HOME}/.${PRG}_history"
-[[ -f "${HISTFILE:-}" ]] || touch "$HISTFILE"
-declare -- HISTCONTROL=ignoredups:ignorespace
-declare -- HISTFILESIZE=2000
-declare -- HISTSIZE=1000
-declare -- HISTTIMEFORMAT='%m-%d_%T '
-history -r "$HISTFILE"
+set_readline_history_file() {
+  [[ -f "${HISTFILE:-}" ]] && history -a "$HISTFILE" || true
+  local -- histfile=${1:-}
+  [[ -z "$histfile" ]] && histfile="${HOME}/.${PRG}_history"
+  declare -xg HISTFILE="$histfile"
+  [[ -f "${HISTFILE:-}" ]] || touch "$HISTFILE"
+  declare -xg HISTCONTROL=ignoredups:ignorespace
+  declare -xg HISTFILESIZE=2000
+  declare -xg HISTSIZE=1000
+  declare -xg HISTTIMEFORMAT='%m-%d_%T '
+  history -r "$HISTFILE"
+}
+set_readline_history_file
 
 # interactive settings ---------------------------------------------------------
 declare -i verbose=1
@@ -59,7 +65,7 @@ declare -i interactive
 interactive=$(  [ -t 0 ] && echo 1 || echo 0 )
 declare -i wordwrap
 declare -- less
-interactive_set() {
+set_interactive() {
   [[ -z "${1:-}" ]] && { _declarep interactive wordwrap less; return 0; }
   if [[ $1 == 'on' ]] || (($1 > 0)); then
     interactive=1
@@ -71,8 +77,8 @@ interactive_set() {
     less=cat
   fi
 }
-declare -fx 'interactive_set'
-interactive_set $interactive
+declare -fx 'set_interactive'
+set_interactive "$interactive"
 
 declare -i exit_on_completion=0
 
@@ -191,6 +197,7 @@ declare -- _file
 while (($#)) && [[ ${1:0:1} != '-' ]]; do
   _file=$(readlink -fn "$1")
   if [[ ! -f "$_file" ]]; then
+    [[ "$_file" == *".dv2.agent" ]] && msg.die "File '$1' not found."
     _file=$(readlink -fn "${1}.dv2.agent")
     if [[ ! -f "${_file}.dv2.agent" ]]; then
       msg.die "File '$1' not found."
@@ -312,10 +319,10 @@ main() {
       -q|--quiet) ((verbose<=0)) && verbose=0 || verbose+=-1
                   ;;
       -i|--interactive)
-                  interactive_set 1
+                  set_interactive 1
                   ;;
       -y|--not-interactive)
-                  interactive_set 0
+                  set_interactive 0
                   ;;
       -a|--auto-max-tokens)
                   auto_max_tokens=1
@@ -448,7 +455,7 @@ main() {
               fi
               ;;
           interactive)
-              interactive_set "${cmd_args}"
+              set_interactive "${cmd_args}"
               ;;
           edit)
               ((!interactive)) && continue

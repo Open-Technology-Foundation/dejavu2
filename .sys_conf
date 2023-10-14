@@ -1,1 +1,39 @@
-../g-s-a/.sys_conf
+#!/bin/bash
+#shellcheck disable=SC2034
+
+# This is the directory where output files are 
+# stored on this machine.
+dest_dir=/var/tmp/g-s-a
+
+# scp: At the end of the process, output file 
+# can be sent via scp to defined 
+# hosts:/dir_paths.
+use_scp=1
+# If _any_ of the following scp_* vars are empty, 
+# or not initialised, then scp is not performed.
+# Your scp username, eg: bsofh
+scp_dest_user= #bsofh
+# Your scp hostname, eg: server420.id
+scp_dest_host= #server420.id
+# The directory on hostname where you wish to scp 
+# copy the output files.
+scp_dest_dir=/var/tmp/g-s-a
+
+# You can define default value for 'languages'.
+# The first language defines the primary language;
+# subsequent languages will generate summaries in 
+# those languages.
+languages=( English Indonesian )
+#languages=( Indonesian )
+#languages=( English Indonesian French )
+
+# You can set basic default values for these 
+# variables as well:
+model=gpt-3.5-turbo-16k-0613
+max_tokens=8000
+temperature=0.1
+
+# All verbosity is sent to stderr.
+verbose=0
+
+#fin

@@ -3,11 +3,12 @@
 int_list() {
   # Return an ordered list of integers.
 
-  local -- input_string="${1:-}"
-  [[ -z "$input_string" ]] && {
-    echo >&2 "${FUNCNAME[0]}: error: empty list specifier."
+  [[ -z "${1:-}" ]] && {
+    echo >&2 "${FUNCNAME[0]}: Error: input_string empty."
     return 1
   }
+
+  local -- input_string="$1"
   local -i minVal=${2:-0}
   local -i maxVal=${3:-4294967295}
   local -i revSort=${4:-0}
@@ -23,34 +24,32 @@ int_list() {
   for numC in "${numlist[@]}"; do
     # Skip empty elements 
     [[ -z $numC ]] && continue
-
     # Handle 'all' or '-' keyword
-    [[ $numC == 'all' || $numC == '-' ]] && numC="$minVal-$maxVal"
-
-    # Handle range notation 
-    if [[ ${numC:0:2} == '--' ]]; then
-      # -20  --20 -20--42
-      stnum=$((maxVal-${numC:2}))
-      numC="$stnum"
+    [[ $numC == 'all' || $numC == '-' ]] && {
+      range_list+=( $(printf '%s ' $(eval echo {$minVal..$maxVal})) )
+      continue
+    }
+    [[ $numC == '--' ]] && { range_list+=($maxVal); continue; }
+    # Handle range notation
+    if [[ "${numC:0:2}" == '--' ]]; then
+      # --2 --1 --42
+      [[ -z "${numC:2}" ]] \
+        && stnum=$maxVal \
+        || stnum=$((maxVal - 0${numC:2} + 1))
+      # Check if the number is within the specified limits
+      (( stnum >= minVal && stnum <= maxVal )) \
+        && range_list+=($stnum)
     elif [[ $numC == *-* ]]; then
-      stnum=${numC%-*}
-      endnum=${numC#*-}
+      stnum=${numC%-*}; endnum=${numC#*-}
       # Handle empty start or end values 
-      ((stnum))  || stnum=$minVal
-      ((endnum)) || endnum=$maxVal
+      ((stnum))  || stnum=$minVal; ((endnum)) || endnum=$maxVal
       # Convert start and end values to integers 
-      stnum=$((stnum))
-      endnum=$((endnum))
-      # adjust negative values to positive pointers within the max range
-      ((stnum < 0)) && stnum=maxVal-stnum+1
-      ((endnum < 0)) && endnum=maxVal-endnum+1
-
+      stnum=$((stnum)); endnum=$((endnum))
       # Check if the range is within the specified limits 
       if (( stnum < minVal || endnum > maxVal )); then
         echo >&2 "${FUNCNAME[0]}: error: out of range $stnum-$endnum"
         continue
       fi
-
       # Add the range of numbers to the list 
       for (( i=stnum; i<=endnum; i++ )); do
         range_list+=($i)

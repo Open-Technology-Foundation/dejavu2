@@ -100,6 +100,12 @@ Remembers context and history.  You and your AI can have multiple 'personalities
 # Requirements
 For the moment, DV2 has only been tested on Ubuntu Linux 22.04.  Other platforms may require adjustments to the Python source code.
 
+Other requirements are:
+  - Python 3.10+
+  - Bash 5+
+  - git
+  - pandoc
+
 Before starting, you will need ensure you have an API key from [openAI](https://openai.com/api/) in order to run this program.  See also ENVIRONMENT.
 
 # Installation

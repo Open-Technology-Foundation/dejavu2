@@ -1,1 +1,157 @@
-../g-s-a/.sys_lib
+#!/bin/bash
+#!shellcheck disable=SC1090,SC1091,SC2034
+#
+# Standard header include file for 
+# all g-s-a scripts and modules
+#
+set -e
+shopt -s extglob globstar checkwinsize
+
+# For the moment, all g-s-a programs require root.
+((UID)) && { echo >&2 "$(basename "$0") requires root."; exit 1; }
+
+# Standard GLOBAL_VARS list for all applications.
+declare -a GLOBAL_VARS=(
+  GLOBAL_VARS
+  USER HOSTNAME EDITOR SHELL
+  ''
+  PRG0 PRG PRGDIR PRG_short
+  ''
+  version PRGVER
+  ''
+  LIBFILES
+  ''
+  CONF_FILES
+  Conf_File
+  ''
+  verbose
+  ''
+  LF TAB
+  ''
+  TMPDIR
+  DEBUG
+  ''
+  COLUMNS
+  LINES
+  ''
+)
+dump_global_vars() {
+  local _v
+  for _v in "${GLOBAL_VARS[@]}"; do
+    [[ -n "$_v" ]] && continue
+    declare -p "$_v" || true
+  done | sort -f
+  unset _v
+}
+declare -fx 'dump_global_vars'
+
+# system globals ------------------------------------------------------
+declare -- PRG0 PRG PRGDIR PRG_short 
+declare -- version PRGVER
+declare -a LIBFILES=()
+declare -i verbose=1
+declare -x LF=$'\n' TAB=$'\t'
+PRG0=$(readlink -en -- "${0:-}") || exit 1
+PRG=${PRG0##*/}
+PRGDIR=${PRG0%/*}
+
+
+# system metadata files (.sys_*) ---------------------------------------
+# Process dotvars in $PRGDIR
+declare sys_file fb dotvar
+while read -r sys_file; do 
+  fb=$(basename -- "$sys_file"); fb=${fb:1}
+  dotvar=$sys_file
+  [[ -L "$sys_file" ]] && dotvar=$(readlink -en -- "$sys_file")
+  if [[ -d "$dotvar" ]]; then
+    eval "${fb}='$dotvar'" 2>/dev/null || continue
+    GLOBAL_VARS+=( "$fb" )
+    continue
+  fi
+  eval "${fb}='$(cat -s -- "$sys_file")'" 2>/dev/null || continue
+  GLOBAL_VARS+=( "$fb" )
+done < <(find "$PRGDIR"/ -maxdepth 1 \
+            -name '.sys_*' \( -type f -o -type l -o -type d \))
+unset sys_file fb dotvar
+
+# Import lib modules -------------------------------------------------
+declare _libfile
+mapfile -t  LIBFILES < <(find "${PRGDIR}/.sys_libs/" -type f )
+#mapfile -t  LIBFILES < <(find "${PRGDIR}/g-s-a.libs/" -type f )
+for _libfile in "${LIBFILES[@]}"; do
+	[[ -r "$_libfile" ]] && { source "$_libfile" || exit 1; }
+done
+unset _libfile
+
+# Set short-form PRG name. --------------------------------------------
+PRG_short=$(g-s-a.short_name "$PRG")
+
+# Make sure HOSTNAME, USER, EDITOR, and SHELL are defined. ------------
+if [[ -z "${HOSTNAME:-}"  ]]; then
+  declare -gx HOSTNAME=''
+  HOSTNAME=$(hostname)
+  [[ -z "$HOSTNAME" ]] && { echo >&2 'envvar HOSTNAME not defined.'; exit 1; }
+fi
+
+if [[ -z "${USER:-}"  ]]; then
+  declare -gx USER=''
+  USER=$(basename -- "$HOME")
+  [[ -z "$USER" ]] && { echo >&2 'envvar USER not defined.'; exit 1; }
+fi
+
+if [[ -z "${EDITOR:-}"  ]]; then
+  declare -gx EDITOR=''
+  if [[ -n "${SUDO_EDITOR:-}" ]]; then
+    EDITOR=$SUDO_EDITOR
+  elif [[ -n "${SELECTED_EDITOR:-}" ]]; then
+    EDITOR=$SELECTED_EDITOR
+  elif [[ -r "${HOME:-}/.selected_editor" ]]; then
+    source "${HOME:-}/.selected_editor" || true
+    [[ -n "${SELECTED_EDITOR:-}" ]] && EDITOR=$SELECTED_EDITOR
+  elif [[ -x /etc/alternatives/editor ]]; then
+    EDITOR=$(readlink -en /etc/alternatives/editor)
+  else
+    EDITOR="$(command -v nano 2>/dev/null || command -v joe 2>/dev/null)"
+  fi
+fi
+
+if [[ -z "${SHELL:-}"  ]]; then
+  declare -gx SHELL=''
+  SHELL=$(command -v bash)
+  [[ -z "$SHELL" ]] && { echo >&2 'envvar SHELL not defined.'; exit 1; }
+fi
+
+# version strings ------------------------------------------------------
+version=$(cat -s -- "$PRGDIR"/.sys_version 2>/dev/null || echo '0.4.20')
+PRGVER="$PRG $version"
+
+
+# config/Agent files, in order of reading. -----------------------------
+CONF_FILES=(  "$PRGDIR/$PRG.conf" 
+              "/etc/default/$PRG.conf" 
+              "$HOME/.$PRG.conf" )
+[[ $HOME == "$PWD" ]] \
+    || CONF_FILES+=( "./.$PRG.conf" )
+Conf_File=${CONF_FILES[-1]}
+
+# misc -----------------------------------------------------------------
+# Terminal rows/columns
+[[ -z "$COLUMNS" ]] && declare -i COLUMNS=78
+COLUMNS=${COLUMNS:-78}
+[[ -z "$LINES" ]] && declare -i LINES=24
+LINES=${LINES:-24}
+
+# Define TMPDIR
+[[ -z "$TMPDIR" ]] && declare -- TMPDIR=/tmp
+
+# Define DEBUG
+[[ -z "$DEBUG" ]] && declare -i DEBUG=0
+DEBUG=${DEBUG:-0}
+
+# app specific --------------------------------------------------------
+# *needs to exit
+# Cache Dir
+Cache_Dir=/var/tmp/"$PRG_short"
+[[ -d $Cache_Dir ]] || mkdir -p "$Cache_Dir"
+
+#fin
