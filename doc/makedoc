@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+((UID)) && { echo >&2 "Requires root."; exit 1; }
 declare -- PRG0 PRG PRGDIR
 PRG0=$(readlink -en -- "${0:-}") || exit 1
 PRG=${PRG0##*/}
@@ -14,6 +15,7 @@ PRGDIR=${PRG0%/*}
 cd "$PRGDIR"
 
 declare -- version
+touch -h -r ../.sys_version ../.version
 version=$(cat ../.version)
 
 main() {
