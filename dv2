@@ -14,6 +14,7 @@ declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
 
 # basic application functions --------------------------------------------------
+# semantic helper functions
 msg()      { (($#)) || return 0; echo -n "$PRG: "; echo "$@"; }
 msg.info() { >&2 msg "$@"; }
 msg.err()  { >&2 msg "$@"; }
@@ -195,9 +196,9 @@ declare -- _file
 while (($#)) && [[ ${1:0:1} != '-' ]]; do
   _file=$(readlink -fn "$1")
   if [[ ! -f "$_file" ]]; then
-    [[ "$_file" == *".dv2.agent" ]] && msg.die "File '$1' not found."
-    _file=$(readlink -fn "${1}.dv2.agent")
-    if [[ ! -f "${_file}.dv2.agent" ]]; then
+    [[ "$_file" == *".agent.dv2" ]] && msg.die "File '$1' not found."
+    _file=$(readlink -fn "${1}.agent.dv2")
+    if [[ ! -f "${_file}.agent.dv2" ]]; then
       msg.die "File '$1' not found."
     fi
   fi
@@ -369,7 +370,7 @@ main() {
   local -- cmd_type='/'
 
   # Get the start time in seconds and nanoseconds since the Unix epoch
-  local -- start_time elapsed_s
+  local -- start_time
   start_time="$(date +%s%N)"
 
   # main loop =========================================================
@@ -378,7 +379,7 @@ main() {
     while ((1)); do
       # -- line off--------------------------------------------
       if ((verbose && statusline)); then
-        local _prompt="#!$system $USER@$HOSTNAME:"
+        local _prompt="#!$system $USER@$HOSTNAME:" _elapsed_s
         (( ${#PWD} > 43 )) \
             && _prompt+="...${PWD: -40}" \
             || _prompt+="$PWD"
@@ -386,12 +387,11 @@ main() {
         _prompt+=" -- $used_tokens/$token_limit"
         (( (token_limit - max_tokens - used_tokens) < $((token_limit/10)))) \
             && _prompt+='!!'
-        # Calculate the elapsed time in seconds using bc for floating-point arithmetic
-        elapsed_s="$(echo "scale=3; $(( $(date +%s%N) - start_time )) / 1000000000" | bc)"
-        elapsed_s=${elapsed_s:0:6}; [[ ${elapsed_s: -1} == '.' ]] && elapsed_s=${elapsed_s:0:-1}
-        _prompt+=" -- ${elapsed_s}s"
+        _elapsed_s="$(echo "scale=3; $(( $(date +%s%N) - start_time )) / 1000000000" | bc)"
+        _elapsed_s=${_elapsed_s:0:6}; [[ ${_elapsed_s: -1} == '.' ]] && _elapsed_s=${_elapsed_s:0:-1}
+        _prompt+=" -- ${_elapsed_s}s"
         echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
-        unset _prompt
+        unset _prompt _elapsed_s
       fi
 
       # Command Cache -----------------------------------------
@@ -409,22 +409,22 @@ main() {
         echo
         while((1)); do
           read -er -i "$cmd_type" -p "$PRG: $user: " content
-          # Ignore blank lines and #comment lines
+          # Ignore blank and #comment lines
           [[ -z "$content" || ${content:0:1} == '#' ]] && continue
+          [[ $content == '/' ]] \
+              && { print_script_command_help; continue; }
+          [[ $content == '//' ]] \
+              && { $man "$PRG"; continue; }
+          [[ $content =~ ^//[a-zA-Z].* ]] \
+              && { content="${content:1}"; break; }
+          [[ $content =~ ^/\![a-zA-Z].* ]] \
+              && { content="${content:1}"; break; }
           break
         done
         start_time="$(date +%s%N)"
         # Is it a DV script /command?
         if [[ ${content:0:1} == '/' ]]; then
           cmd_type='/'
-          [[ $content == '/' ]]  && { print_script_command_help; continue; }
-          [[ $content == '//' ]] && { $man "$PRG"; continue; }
-          if [[ ${content:0:2} == '/!' ]]; then
-            content=${content:1}
-            cmd_type='!'
-            ((${#content})) || content="/$SHELL"
-            content="/shell ${content:1}"
-          fi
         # Is it a shell !command?
         elif [[ ${content:0:1} == '!' ]]; then
           cmd_type='!'
@@ -539,15 +539,14 @@ main() {
                 for _var in "${GLOBAL_VARS[@]}"; do
                   [[ -z "$_var" ]] && { echo; continue; }
                   _str=$(_declarep "$_var" || { msg.err "Variable '$_var' not found."; echo ''; } )
-                  [[  -z "$_str" \
-                      || "$_str" == *"$LF"* \
+                  [[  -z "$_str" || "$_str" == *"$LF"* \
                       || "$_str" == *'GLOBAL_VARS'* ]] \
                     && continue
                  echo -n '    '
                  echo "$_str" | cut -d' ' -f2-
                 done
+                unset _var _str
               fi ) | $less
-              unset _var _str
               ;;
           models|engines)
               [[ ${cmd_args,,} == 'update' ]] && get_openai_models 1
@@ -557,13 +556,13 @@ main() {
                 _j=$((_i+1))
                 printf '%s) %s\n' "$_j" "${Models[$_i]}"
               done
-              echo
               read -rp "$PRG: Select Model 0|1-${#Models[@]} " _sel
               ( [[ -z "$_sel" || $_sel == 'q' ]] \
                   || (( _sel == 0 || _sel > ${#Models[@]} ))
               ) && continue
               model="${Models[_sel-1]}"
               token_limit=$(context_window "$model")
+              ((verbose)) && declarep 3 model token_limit
               continue
               ;;
           list)
@@ -618,10 +617,10 @@ main() {
               local _dir
               local -a _files=()
               _files=( $( \
-                ( for _dir in $PRGDIR /etc/default $HOME/.$PRG $cmd_args ; do
+                ( for _dir in "$PRGDIR" /etc/default "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR" "$HOME/.$PRG"; do
                     find "$_dir" \
-                      -maxdepth 1 \
-                      \( -name "*dv2.conf" -o -name "*.agent" \) \
+                      -maxdepth 2 \
+                      \( -name "*dv2.conf" -o -name "*.agent.dv2" \) \
                       -type f 2>/dev/null
                   done
                 ) | sort -u)
@@ -631,19 +630,64 @@ main() {
                 printf '%s\n' "${_files[@]}"
                 continue
               fi
+              local -- _olddir='.' _newdir=''
+              local -a _newfiles=( ".." )
+              for _dir in "${_files[@]}"; do
+                if [[ -f "$_dir" ]]; then
+                  _newdir="$(dirname -- "$_dir")"
+                  [[ _olddir != "$_newdir" ]] \
+                    && {
+                      _olddir=$_newdir
+                      _newfiles+=( "$_newdir" )
+                    }
+                fi
+                _newfiles+=( "$_dir" )
+              done
+              _files=( "${_newfiles[@]}" )
+              unset _newfiles _olddir
+
               while((1)); do
                 _ccc=0
+                _newdir=''
                 for _dir in "${_files[@]}"; do
-                  echo "$((++_ccc)) $_dir"
+                  if [[ -d "$_dir" ]]; then
+                    _newdir=$_dir
+                    echo "$((++_ccc)) > ${_dir/"$PWD/"/}"
+                  else
+                    echo "$((++_ccc))     ${_dir/"$_newdir/"/}"
+                  fi
                 done
-                echo
-                read -rp "$PRG: $(basename "$EDITOR") 0|1-${#_files[@]} " _sel
-                ( [[ -z "$_sel" || $_sel == 'q' ]] \
-                    || (( _sel == 0 || _sel > ${#_files[@]} ))
-                ) && break
-                dv_shell "$EDITOR ${_files[$((_sel-1))]}" resume stop
+                local -- reply _elprompt
+                while((1)); do
+                  echo -ne "\033[2K\r"
+                  read -rs -n 1 -i n -p "$PRG: edit, load, cd, quit: e|l|c|q " reply
+                  [[ "${reply,,}" == 'q' || "${reply}" == '0' ]] && break 2
+                  [[ "${reply,,}" == 'e' ]] && { _elprompt='edit'; break; }
+                  [[ "${reply,,}" == 'l' ]] && { _elprompt='load'; break; }
+                  [[ "${reply,,}" == 'c' ]] && { _elprompt='cd'; break; }
+                done
+                echo -ne "\033[2K\r"
+                read -rp "$PRG: $_elprompt: 0|1-${#_files[@]} " _sel
+                [[ $_sel == 'q' ]] && break
+                [[ -z "$_sel" ]] || (( _sel == 0 || _sel > ${#_files[@]} )) \
+                  && continue
+                _selected="${_files[$((_sel-1))]}"
+                if [[ $reply == 'c' ]]; then
+                  [[ -d "$_selected" ]] \
+                    && cd "$_selected" \
+                    || cd $(dirname -- "$_selected")
+                  continue
+                elif [[ $reply == 'l' ]]; then
+                  Cmd_Cache+=( "/load \"$_selected\"" )
+                  break
+                else
+                  [[ -d "$_selected" ]] && continue
+                  Cmd_Cache+=( "/edit \"$_selected\"" )
+                  Cmd_Cache+=( "/$cmd $cmd_args" )
+                  break
+                fi
               done
-              unset _dir _ccc _sel _files
+              unset _dir _ccc _sel _files _selected reply
               ;;
           load)
               [[ -f $cmd_args ]] || { msg.err "${FUNCNAME[0]}: Agent File '$cmd_args' not found."; continue; }
@@ -655,15 +699,17 @@ main() {
               local -a _dirs=() _files=()
               local -i _ccc=0 _sel=0
               [[ -z "$cmd_args" ]] \
-                  && _dirs=( "$PWD" "$PRGDIR" "$HOME/.$PRG" ) \
+                  && _dirs=( "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR" "$HOME/.$PRG" "$PRGDIR" ) \
                   || _dirs=( $(readlink -fn -- "$cmd_args") )
               _files=( $( \
                 ( for _dir in "${_dirs[@]}"; do
                     [[ -d "$_dir" ]] || continue
-                    find "$_dir" \
+                    ( find "$_dir" \
                       -maxdepth 1 \
                       -name "*.dv2" \
-                      -type f 2>/dev/null || true
+                      -type f 2>/dev/null \
+                      | grep -v '.agent.dv2' ) \
+                      || true
                   done
                 ) | sort -u)
               )
@@ -903,11 +949,11 @@ AI Agent creation and scripting for Bash terminal using openAI GPT models.
 
   $PRG [agent] [-options] [<file]
 
-  agent     Agent file (with '.$PRG.agent' filename extension).
+  agent     Agent file (with '.agent.$PRG' filename extension).
             Optional, Positional; must be first argument,
             before any other options.
 
-  file      script.$PRG file, via stdin.
+  file      .script.$PRG file, via stdin.
 
 ## Options
 
