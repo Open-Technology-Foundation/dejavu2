@@ -166,7 +166,7 @@ process_g_messages() {
 }
 
 load_agent_file() {
-  local -a _conf=()
+  local -a _agent=()
   while(($#)); do
     ((verbose>1)) && msg.info "${FUNCNAME[0]}: Processing Agent $1..."
     [[ -f "$1" ]] || {
@@ -180,13 +180,13 @@ load_agent_file() {
     process_g_messages || {
       shift; continue
     }
-    _conf+=("$1")
+    _agent+=("$1")
     shift
   done
-  AGENT_FILES=( "${_conf[@]}" )
-  ((verbose)) && msg.info "Agents (${AGENT_FILES[*]}) Loaded."
+  AGENT_FILES=( "${_agent[@]}" )
+  ((verbose>1)) && msg.info "Agents (${AGENT_FILES[*]}) Loaded."
   Agent_File=${AGENT_FILES[-1]}
-  unset _conf
+  unset _agent
   return 0
 }
 
@@ -205,9 +205,7 @@ while (($#)) && [[ ${1:0:1} != '-' ]]; do
   shift
 done
 unset _file
-echo "$(_declarep primary_directive)" >/tmp/$PRG
 load_agent_file "${AGENT_FILES[@]}"
-echo "$(_declarep primary_directive)" >>/tmp/$PRG
 
 # ON ERROR --------------------------------------------------------------------
 # on_error=continue|resume|ignore|stop|exit
@@ -275,74 +273,76 @@ main() {
     fi
     #shellcheck disable=SC2206
     case "$1" in
-      -m|--model) shift; model=${1:-$model}
-                  ;;
+      -m|--model)
+                shift; model=${1:-$model}
+                ;;
       -t|--temperature)
-                  shift; temperature=${1:-0.0072973525693}
-                  ;;
+                shift; temperature=${1:-0.0072973525693}
+                ;;
       -g|--message)
-                  shift; role="${1:-system}"; role=${role,,}
-                  [[ $role == 'system' || $role == 'user' || $role == 'assistant' ]] \
-                      || { msg.err "Invalid -g option '$role'. Must be system, user, or assistant"; return 22; }
-                  shift; content="${1:-}"
-                  [[ -n "$content" ]] \
-                      && messages+=( "$role: $content" )
-                  ;;
+                shift; role="${1:-system}"; role=${role,,}
+                [[ $role == 'system' || $role == 'user' || $role == 'assistant' ]] \
+                    || { msg.err "Invalid -g option '$role'. Must be system, user, or assistant"; return 22; }
+                shift; content="${1:-}"
+                [[ -n "$content" ]] \
+                    && messages+=( "$role: $content" )
+                ;;
       -k|--token-limit|--token_limit)
-                  shift; token_limit=${1:- $token_limit}
-                  ;;
+                shift; token_limit=${1:- $token_limit}
+                ;;
       -M|--max-tokens|--max_tokens)
-                  shift; max_tokens=${1:- $token_limit}
-                  ;;
+                shift; max_tokens=${1:- $token_limit}
+                ;;
       -c|--command|--cmd)
-                  shift
-                  [[ -n "${1:-}" ]] && Cmd_Cache+=( "$1" )
-                  ;;
+                shift
+                [[ -n "${1:-}" ]] && Cmd_Cache+=( "$1" )
+                ;;
       -x|--exit_on_completion|--quit|--exit)
-                  exit_on_completion=1
-                  ;;
+                exit_on_completion=1
+                ;;
       -L|--languages)
-                  shift; languages=( ${1//,/ } )
-                  ;;
+                shift; languages=( ${1//,/ } )
+                ;;
       -l|--language)
-                  shift; languages+=( ${1//,/ } )
-                  ;;
+                shift; languages+=( ${1//,/ } )
+                ;;
       -w|--wordwrap)
-                  shift; wordwrap=${1:-1}
-                  ;;
+                shift; wordwrap=${1:-1}
+                ;;
       -v|--verbose)
-                  ((verbose<=0)) && verbose=1 || verbose+=1
-                  ;;
-      -q|--quiet) ((verbose<=0)) && verbose=0 || verbose+=-1
-                  ;;
+                ((verbose<=0)) && verbose=1 || verbose+=1
+                ;;
+      -q|--quiet)
+                ((verbose>=1)) && verbose+=-1 || verbose=0
+                ;;
       -i|--interactive)
-                  set_interactive 1
-                  ;;
+                set_interactive 1
+                ;;
       -y|--not-interactive)
-                  set_interactive 0
-                  ;;
+                set_interactive 0
+                ;;
       -a|--auto-max-tokens)
-                  auto_max_tokens=1
-                  ;;
+                auto_max_tokens=1
+                ;;
       -A|--no-auto-max-tokens)
-                  auto_max_tokens=0
-                  ;;
-      -N|--statusline) statusline=0
-                  ;;
+                auto_max_tokens=0
+                ;;
+      -N|--no-statusline)
+                statusline=0
+                ;;
       -V|--version)
-                  echo "$PRGVER"; return 0
-                  ;;
-      -h|--help)  usage; return 0
-                  ;;
+                echo "$PRGVER"; return 0
+                ;;
+      -h|--help)
+                usage; return 0
+                ;;
       -[mtgkMcxLlwvqiyaANVh]*) #shellcheck disable=SC2046 # de-aggregate aggregated short options
-                  set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
-                  ;;
-      -?|--*)     msg.err "Invalid option '$1'"
-                  return 22
-                  ;;
-      *)          msg.err "Invalid argument '$1'"
-                  return 2
-                  ;;
+                set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
+                ;;
+      -?|--*)   msg.err "Invalid option '$1'"
+                return 22 ;;
+      *)        msg.err "Invalid argument '$1'"
+                return 2 ;;
     esac
     shift
   done
@@ -388,7 +388,8 @@ main() {
             && _prompt+='!!'
         # Calculate the elapsed time in seconds using bc for floating-point arithmetic
         elapsed_s="$(echo "scale=3; $(( $(date +%s%N) - start_time )) / 1000000000" | bc)"
-        _prompt+=" -- ${elapsed_s:0:6}s --"
+        elapsed_s=${elapsed_s:0:6}; [[ ${elapsed_s: -1} == '.' ]] && elapsed_s=${elapsed_s:0:-1}
+        _prompt+=" -- ${elapsed_s}s"
         echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
         unset _prompt
       fi
@@ -402,8 +403,7 @@ main() {
             echo "$user: $content"
           }
         fi
-        unset 'Cmd_Cache[0]'
-        Cmd_Cache=("${Cmd_Cache[@]:1}")
+        unset 'Cmd_Cache[0]'; Cmd_Cache=("${Cmd_Cache[@]:1}")
       else
         # Interactive ------------------------------------------
         echo

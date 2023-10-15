@@ -56,7 +56,7 @@
 -q, **--quiet**
 : verbose=0
 
--N, **--statusline**
+-N, **--no-statusline**
 : statusline=0 [statusline=1]
 
 -i, **--interactive**
@@ -74,7 +74,7 @@
 : Disable dynamic calculation of max_tokens.
 
 -a, **--autosave** on|off
-: If on, upon exit, append current conversation to current dv script. Default is off.
+: If on, upon exit, append current messages to current dv script. Default is off.
 
 -u, **--upgrade**
 : Upgrade DV2 from git repository.
@@ -88,14 +88,24 @@
 : This help, exit
 
 # DESCRIPTION
+
+    _/////    _//         _//
+    _//   _//  _//       _//   _///_/
+    _//    _//  _//     _//   _/    _//
+    _//    _//   _//   _//         _//
+    _//    _//    _// _//        _//
+    _//   _//      _////       _//
+    _/////          _//       _////////
+
+    D  E  J  A  V  U - D  E  J  A  V  U
+
 DéjàVu-DéjàVu (`DV2`) is an AI Agent-creation and scripting program for the Bash terminal, using openAI GPT models.
 
 DV2 has powerful scripting capabilities.  It brings the power of OpenAi's GPT models directly to your terminal command-line.
 
-__"it's dejavu all over again."__
+    __"it's dejavu all over again."__ - Y. Berra
 
 Remembers context and history.  You and your AI can have multiple 'personalities', 'experts', tasks, etc.
-
 
 # Requirements
 For the moment, DV2 has only been tested on Ubuntu Linux 22.04.  Other platforms may require adjustments to the Python source code.
@@ -105,6 +115,7 @@ Other requirements are:
   - Bash 5+
   - git
   - pandoc
+  - openai
 
 Before starting, you will need ensure you have an API key from [openAI](https://openai.com/api/) in order to run this program.  See also ENVIRONMENT.
 
@@ -200,28 +211,23 @@ For instance, `/status` will display all current DV2 settings.
     /status          Show status of current environment.
     /vars            Show current variables.
 
-### Conversations
+### Conversations/Messages
     /list [long|short] [range]
-                     List current conversation.
+                     List current messages.
                      "short" for condenced list, "long" for full list.
                      Default is "long".
-                     If "range" omitted, lists entire conversation.
-    /delete range    Delete conversation items in "range".
-    /clear           Clear all conversation.  Same as /delete 1-
-    /tldr [range]    Summarize all conversation responses in "range".
+                     If "range" omitted, lists entire messages.
+    /delete range    Delete message items in "range".
+    /clear           Clear all messages.  Same as /delete 1-
+    /tldr [range]    Summarize all messages responses in "range".
                      Default is the previous response.
-    /summarize [conversation|prompt|all]
-                     Summarise every conversation or prompt items.
-                     Default is "conversation".
+    /summarize [messages|prompt|all]
+                     Summarise every message or prompt items.
+                     Default is "messages".
     /autosave [on|off]
-                     Save all conversation to current dv Script on exit.
+                     Save all message to current dv Script on exit.
                      Default is Off.
-    /save [file]     Save current conversation.  If "file" is not specified
-                     then saves to current conversation file.
-    /awesome [select|list|update]
-                     Lists over a 100 prompt suggestions from prompts.chat.
-                     If no subcommand is specified, defaults to "select".
-                     Updating occurs directly from prompts.chat github page
+    /save [file]     Save current message.
     /import [file]   Import "file" into the input prompt.
                      If "file" is not specified, opens EDITOR to enable
                      multi-line commands.
@@ -234,11 +240,11 @@ For instance, `/status` will display all current DV2 settings.
     /temperature [f]  Set/Display temperature (0.0-1.0).
     /top_p [f]        Set/Display top_p (0.0-1.0).
     /tokens [n]       Set/Display tokens to use.
-    /prompt [prompt]  Display current conversation set-up information.
+    /prompt [prompt]  Display current messages set-up information.
                       If "prompt" is specified, set the new conversion prompt.
 
 ### Scripts
-    /files           Display conversation scripts in current and user home
+    /files           Display messages scripts in current and user home
                      directories, with option to edit.
     /edit [file]     Edit "file". If "file" not specified, edit the current
                      script file.
@@ -246,8 +252,8 @@ For instance, `/status` will display all current DV2 settings.
                      of available scripts.
     /instruction string
                      Insert an instruction. Usually only used in scripts.
-    /conversation string
-                     Add to conversation array. Usually only used in scripts.
+    /messages string
+                     Add to messages array. Usually only used in scripts.
     /echo [on|off]   Turn command echo on|off. Usually only used in scripts.
     /exec [cmd...]   Execute a shell command.
 
