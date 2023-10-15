@@ -1,15 +1,12 @@
 # dharma.dv2
-
-/load dharma.dv2.agent
-
-/verbose=0
+/clear
 /statusline=0
 /interactive=0
+/verbose=0
+/exit_on_completion=1
+/on_error=exit
+/load /ai/scripts/dv2/agents/dharma/dharma.dv2.agent
 
-/status
+What is your name, and what is your role?
 
-what is your role?
-
-/interactive=1
-/verbose=1
-/statusline=1
+Who am I?

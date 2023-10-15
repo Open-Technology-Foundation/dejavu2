@@ -5,24 +5,22 @@
 # with Agent 'dharma.dv2.agent'
 
 system="DHARMA"
-
 user="biksu@okusi"
 assistant="guru"
 
 model="gpt-4"
-token_limit="16000"
-max_tokens="4000"
 auto_max_tokens="1"
+#token_limit="16000"
+#max_tokens="4000"
 temperature="0.072973525693"
 n="1"
 top_p="1"
 stop=""
 
-verbose="1"
-
-interactive="1"
-wordwrap="1"
-less="/usr/bin/less"
+#verbose="1"
+#interactive="1"
+#wordwrap="1"
+#less="/usr/bin/less"
 
 languages=([0]="English" [1]="Indonesian")
 

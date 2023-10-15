@@ -1,9 +1,9 @@
-% DV2(1) DéjàVu-DéjàVu Chatbot/Scriptbot | Version 0.4.21
+% DV2(1) DéjàVu-DéjàVu GPT Chatbot/Scriptbot | Version 0.4.21
 % Gary Dean, garydean@okusi.id
 % Oct 2023
 
 # NAME
-**DéjàVu-DéjàVu Chatbot/Scriptbot**
+**DéjàVu-DéjàVu GPT Chatbot/Scriptbot**
 
 # SYNOPSIS
 **`dv2 [agent] [-options] [<script_file]`**

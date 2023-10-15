@@ -6,23 +6,22 @@ shopt -s extglob globstar checkwinsize
 declare -- AUTHOR='Gary Dean, garydean@okusi.id'
 declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
 
-declare -- openai=$(command -v openai)
-declare -- less=$(command -v less)
-declare -- man=$(command -v man)
-
 declare -- PRG0;    PRG0=$(readlink -en -- "$0")
 declare -- PRGDIR;  PRGDIR=$(dirname "$PRG0")
 declare -- PRG;     PRG=$(basename "$PRG0")
 
+declare -- openai=$(command -v openai)
+declare -- man=$(command -v man)
+
+# basic application functions --------------------------------------------------
 msg()      { (($#)) || return 0; echo -n "$PRG: "; echo "$@"; }
 msg.info() { >&2 msg "$@"; }
 msg.err()  { >&2 msg "$@"; }
 msg.die()  { >&2 msg "$@"; exit 1; }
-#declare -fx 'msg' 'msg.info' 'msg.err' 'msg.die'
 
 # _declarep() returns entire declare strings, + errors;
-# declarep() does not return errors.
 _declarep()  { (($#)) || return 1; 2>/dev/null declare -p "$@"; }
+# declarep() returns parts of declare strings (0-3), does not return error.
 declarep() {
   (($#)) || return 0;
   local -i _fieldstart="$1"
@@ -43,7 +42,6 @@ declarep() {
   unset _fieldstart _line _vars
 }
 
-
 # readline history -------------------------------------------------------------
 set_readline_history_file() {
   [[ -f "${HISTFILE:-}" ]] && history -a "$HISTFILE" || true
@@ -61,10 +59,10 @@ set_readline_history_file
 
 # interactive settings ---------------------------------------------------------
 declare -i verbose=1
+declare -i wordwrap=1
+declare -- less=cat
 declare -i interactive
 interactive=$(  [ -t 0 ] && echo 1 || echo 0 )
-declare -i wordwrap
-declare -- less
 set_interactive() {
   [[ -z "${1:-}" ]] && { _declarep interactive wordwrap less; return 0; }
   if [[ $1 == 'on' ]] || (($1 > 0)); then
@@ -117,7 +115,7 @@ declare -n Agent_File=Conf_File
 source "$PRGDIR"/.sys_lib
 
 declare -a sys_vars=(
-    Agent_File
+    Agent_File Conf_File
     ''
     system user assistant
     ''
@@ -125,13 +123,13 @@ declare -a sys_vars=(
     token_limit max_tokens auto_max_tokens
     temperature top_p n stop
     ''
-    verbose interactive wordwrap exit_on_completion less
+    verbose interactive wordwrap less  exit_on_completion
     ''
     languages language
     ''
     HISTFILE
-    AGENT_FILES
-    CONF_FILES
+    ''
+    AGENT_FILES CONF_FILES
     ''
     trap_INT trap_ERR trap_EXIT
 )
@@ -260,10 +258,10 @@ set +e
 ##       are handled by trap_error().
 # -- end on_error --------------------------------------------------
 
-
 #===================================================================
 main() {
   local arg1=''
+  # Process command line arguments and options
   while (($#)); do
     # var=value arguments
     if [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
@@ -301,7 +299,6 @@ main() {
                   [[ -n "${1:-}" ]] && Cmd_Cache+=( "$1" )
                   ;;
       -x|--exit_on_completion|--quit|--exit)
-                  Cmd_Cache+=( '/exit' )
                   exit_on_completion=1
                   ;;
       -L|--languages)
@@ -371,6 +368,10 @@ main() {
 
   local -- cmd_type='/'
 
+  # Get the start time in seconds and nanoseconds since the Unix epoch
+  local -- start_time elapsed_s
+  start_time="$(date +%s%N)"
+
   # main loop =========================================================
   while((1)); do
     used_tokens=$((g_messages_len / 4))
@@ -385,6 +386,9 @@ main() {
         _prompt+=" -- $used_tokens/$token_limit"
         (( (token_limit - max_tokens - used_tokens) < $((token_limit/10)))) \
             && _prompt+='!!'
+        # Calculate the elapsed time in seconds using bc for floating-point arithmetic
+        elapsed_s="$(echo "scale=3; $(( $(date +%s%N) - start_time )) / 1000000000" | bc)"
+        _prompt+=" -- ${elapsed_s:0:6}s --"
         echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
         unset _prompt
       fi
@@ -409,6 +413,7 @@ main() {
           [[ -z "$content" || ${content:0:1} == '#' ]] && continue
           break
         done
+        start_time="$(date +%s%N)"
         # Is it a DV script /command?
         if [[ ${content:0:1} == '/' ]]; then
           cmd_type='/'
@@ -810,8 +815,7 @@ main() {
         --top_p        "$top_p" \
         --stop         "$stop" \
         -g system "$_PD_expanded" \
-        "${g_messages[@]}" \
-        || content=''
+        "${g_messages[@]}"
     )
     unset _PD_expanded
     if [[ -n $content ]]; then
@@ -829,9 +833,12 @@ main() {
     history -a "$HISTFILE"
 
     # If the command cache is empty and
-    # we are in not interactive, exit
-    ((${#Cmd_Cache[@]} == 0 && ! interactive)) && break
+    # we are in not interactive mode, then exit.
+    if ((${#Cmd_Cache[@]} == 0)) && ((! interactive)); then
+      break
+    fi
   done
+  history -a "$HISTFILE"
 }
 
 # Shell -------------------------------------------------------------------------------

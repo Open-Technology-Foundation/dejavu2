@@ -26,12 +26,13 @@ main() {
   input_orig=../README.md
   input=README.md
   output=dv2.1
-  rm -f "$input" "$output" "$output".gz \
+  rm -f "$input" \
+        "$output" "$output".gz \
         ../"$output".gz \
         /usr/local/man/man1/"$output".gz \
         /usr/local/man/man1/dv2.gz
 
-  projectname="DéjàVu-DéjàVu Chatbot/Scriptbot"
+  projectname="DéjàVu-DéjàVu GPT Chatbot/Scriptbot"
 
   cp -p "$input_orig" "$input"
   ( echo "% DV2(1) ${projectname} | Version ${version}"
