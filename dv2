@@ -701,6 +701,7 @@ main() {
               while((1)); do
                 _ccc=0
                 _newdir=''
+                declarep 3 PWD
                 for _dir in "${_files[@]}"; do
                   if [[ -d "$_dir" ]]; then
                     _newdir=$_dir
