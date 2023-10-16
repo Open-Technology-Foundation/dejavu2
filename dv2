@@ -561,6 +561,9 @@ main() {
               local -- _cache_file="$_cache_dir/$(date -In)-push.bash"
               local _var _str=''
               ( echo '#!/bin/bash'
+                _declarep system user assistant
+                _declarep primary_directive
+                echo
                 for _var in "${sys_vars[@]}"; do
                   [[ -z "$_var" ]] && { echo; continue; }
                   _declarep "$_var" \
@@ -744,7 +747,7 @@ main() {
               ;;
           load)
               cmd_args=$(eval "echo -ne $cmd_args")
-              [[ -f $cmd_args ]] || { msg.err "${FUNCNAME[0]}: Agent File '$cmd_args' not found."; continue; }
+              [[ -f $cmd_args ]] || { msg.err "$cmd: Agent File '$cmd_args' not found."; continue; }
               load_agent_file "$cmd_args"
               change_flag=1
               ;;
@@ -774,7 +777,6 @@ main() {
                 for _dir in "${_files[@]}"; do
                   echo "$((++_ccc)) $_dir"
                 done
-                echo
                 read -rp "$PRG: $(basename "$EDITOR") 0|1-${#_files[@]} " _sel
                 ( [[ -z "$_sel" || $_sel == 'q' ]] \
                     || (( _sel == 0 || _sel > ${#_files[@]} ))
@@ -944,17 +946,15 @@ main() {
 # Shell -------------------------------------------------------------------------------
 #shellcheck disable=SC2064
 dv_shell() {
-#  local -i verbose_old=${verbose:-0}
-#  verbose=0
   on_error="${2:-resume}"
-  trap - SIGINT EXIT ERR
-  ( eval "${1:-bash}" ) || true
+  trap - SIGINT ERR EXIT
+  set +e ## NOTE
+  eval "${1:-bash}"; true
   set +e ## NOTE
   trap "$trap_EXIT" EXIT
   trap "$trap_ERR"  ERR
   trap "$trap_INT"  SIGINT
   on_error="${3:-stop}"
-#  verbose=$verbose_old
 }
 
 

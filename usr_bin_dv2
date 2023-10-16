@@ -1,2 +1,0 @@
-#!/usr/bin/dash
-exec /ai/scripts/dv2/dv2 "$@"
