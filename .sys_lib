@@ -127,9 +127,14 @@ PRGVER="$PRG $version"
 
 
 # config/Agent files, in order of reading. -----------------------------
+declare -- APP_USER_HOME="$HOME/.$PRG"
+[[ -d "$APP_USER_HOME" ]] || {
+  APP_USER_HOME="$HOME/$PRG"
+  [[ -d "$APP_USER_HOME" ]] || mkdir -m 0755 "$HOME/.$PRG"
+}
 CONF_FILES=(  "$PRGDIR/$PRG.conf" 
               "/etc/default/$PRG.conf" 
-              "$HOME/.$PRG.conf" )
+              "$APP_USER_HOME/$PRG.conf" )
 [[ $HOME == "$PWD" ]] \
     || CONF_FILES+=( "./.$PRG.conf" )
 Conf_File=${CONF_FILES[-1]}

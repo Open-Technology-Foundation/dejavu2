@@ -5,17 +5,18 @@
 # Gary Dean garydean@yatti.id
 # https://github.com/Open-Technology-Foundation/dejavu2
 set -e
-_ent_0=$(readlink -fn -- "$0") || _ent_0=''
-PRG=${_ent_0##*/} 
-PRGDIR=${_ent_0%/*}
-PRGNAME="DéjàVu2"
-SHAREDIR=/usr/share/dejavu2
-REPOSITORY='https://github.com/Open-Technology-Foundation/dejavu2.git'
-Version=$(cat "$PRGDIR/.version")
-doApt=1
-doUpgrade=0
+declare -- _ent_0=$(readlink -fn -- "$0") || _ent_0=''
+declare -- PRG=${_ent_0##*/}
+declare -- PRGDIR=${_ent_0%/*}
+declare -- PRGNAME="DéjàVu2"
+declare -- Version=$(cat "$PRGDIR/.version")
 
-dejavu_help() {
+declare -- SHAREDIR=/usr/share/dejavu2
+declare -- REPOSITORY='https://github.com/Open-Technology-Foundation/dejavu2.git'
+
+declare -i doApt=1 doUpgrade=0
+
+dejavu2_help() {
 cat <<-EOT
   Name    : $PRGNAME vs $Version Installation
   Script  : $PRG
@@ -28,8 +29,8 @@ cat <<-EOT
           : - ~/.bashrc and /etc/bash.bashrc will be modified
           :   to include openai environment variables. 
           : - program files are stored in $SHAREDIR
-          : - executable 'dejavu' is installed in /usr/local/bin/
-          : - a symlink 'dv' is created for executable 'dejavu' 
+          : - executable 'dejavu2' is installed in /usr/local/bin/
+          : - a symlink 'dv2' is created for executable 'dejavu'
           :   in /usr/local/bin, if this does not already exist.
           : 
   Synopsis: $PRG [-vqaVh]
@@ -54,7 +55,7 @@ main() {
   if ((UID)); then
     if [[ " $(id -Gn) " != *" sudo "* ]]; then
       echo 2> "Installation of $PRGNAME requires root access."
-      dejavu_help
+      dejavu2_help
       exit
     fi
   fi
@@ -69,7 +70,7 @@ main() {
     -v|--verbose)   verbose_=1; quiet_='' ;;
     -q|--quiet)     verbose_=0; quiet_='qq' ;;
     -V|--version)   echo "$PRGNAME vs $Version"; return 0 ;;
-    -h|--help)      dejavu_help; return 0 ;;
+    -h|--help)      dejavu2_help; return 0 ;;
     -N|--no-op)     ;;
     -[uavqVhN]*)    #shellcheck disable=SC2046 # de-aggregate aggregated short options
                     set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}";;
@@ -78,17 +79,18 @@ main() {
   esac; shift; done
 
   if ((doUpgrade)); then
-    tempdir="/tmp/$PRG-upgrade-$RANDOM"
+    local -- tempdir="/tmp/$PRG-upgrade-$RANDOM"
     git clone "$REPOSITORY" "$tempdir" || exit
     exec "$tempdir/$PRG" \
-        -"$( ((verbose_)) && echo 'v' || echo 'q')" \
-        -"$( ((doApt)) && echo 'a' || echo 'N')"
+        -"$( ((verbose_)) && echo -n 'v' || echo -n 'q')" \
+        -"$( ((doApt)) && echo -n 'a' || echo -n 'N')"
     exit
   fi
 
   ((verbose_)) && { echo "$PRGNAME vs $Version"; echo ''; }
-    
-  key="$OPENAI_API_KEY"
+
+  local -- key
+  key="${OPENAI_API_KEY:-}"
   if [[ -z $key ]] || ((verbose_)); then
     read -rep "Your openai API Key: " -i "$key" key
     if [[ $key == '' ]]; then
@@ -97,49 +99,50 @@ main() {
     fi 
     echo
   fi
-  OPENAI_API_KEY="$key"
+  OPENAI_API_KEY="$key"; export OPENAI_API_KEY
 
-  key="$OPENAI_ORGANIZATION_ID"
+  key="${OPENAI_ORGANIZATION_ID:-}"
   if ((verbose_)); then
     read -rep "Your openai Organization ID (if required): " -i "$key" key
     echo
   fi
-  OPENAI_ORGANIZATION_ID="$key"
+  OPENAI_ORGANIZATION_ID="$key"; export OPENAI_ORGANIZATION_ID
 
   if ((doApt)); then
     sudo apt update -q"$quiet_"
     sudo apt upgrade -q"$quiet_"
-    sudo apt install -q"$quiet_" python3 pydocs pip git
+    sudo apt install -q"$quiet_" python3 pip git bc pandoc
   fi
 
-  sudo mkdir -p "$SHAREDIR"
-  sudo chmod 775 "$SHAREDIR"
+  [[ -d "$SHAREDIR" ]] || sudo mkdir -m 0775 -p "$SHAREDIR"
   cd "$SHAREDIR"
 
-set +e
-  sudo cp -p "$PRGDIR"/LICENCE "$PRGDIR"/README.md "$PRGDIR"/dv2.1.gz "$SHAREDIR"/
-  sudo cp -p "$PRGDIR"/engines.json "$PRGDIR"/dejavu-command-help.json "$SHAREDIR"/
-  sudo rsync -al "$PRGDIR"/*.dv "$SHAREDIR"/
-  sudo cp -p "$PRGDIR"/dv2 "$PRGDIR"/dv2.install "$SHAREDIR"/
-set -e
-  sudo chmod 775 "$PRGDIR"/dv
+  set +e
+  mkdir -m 0775 -p "$SHAREDIR"/{agents,doc,.sys_libs}
+  cd "$PRGDIR" || exit 1
+  sudo rsync -al agents/* "$SHAREDIR"/agents/
+  sudo rsync -al .sys_libs/* "$SHAREDIR"/.sys_libs/
+  sudo cp -p doc/makedoc "$SHAREDIR"/doc/
+  sudo chmod 775 "$PRGDIR"/dv2
+  sudo cp -p dv2 dv2.install dv2.1.gz dv2.conf LICENSE README.md .sys_conf .sys_lib .sys_version "$SHAREDIR"/
+  set -e
   
-  sudo mkdir -p -m 755 /usr/local/bin
-  cd /usr/local/bin
-  sudo rm -f /usr/local/bin/dv /usr/local/bin/dejavu
+  cd /usr/local/bin || { sudo mkdir -p -m 755 /usr/local/bin; cd /usr/local/bin; }
+  sudo rm -f /usr/local/bin/dv2 /usr/local/bin/dejavu2
   sudo ln -s --force "$SHAREDIR"/dv2 dv2
   sudo ln -s --force "$SHAREDIR"/dv2 dejavu2
 
   # manpages
   cd "$SHAREDIR"
-  sudo mkdir -p -m 0755 /usr/local/share/man/man1
+  [[ -d  /usr/local/share/man/man1 ]] \
+    || sudo mkdir -p -m 0755 /usr/local/share/man/man1
   sudo rm -f /usr/local/man/man1/dv2.1.gz /usr/local/man/man1/dv2.1.gz
-  sudo cp -p "$SHAREDIR"/dejavu2.1.gz /usr/local/man/man1/dv2.1.gz
-  sudo cp -p "$SHAREDIR"/dejavu2.1.gz /usr/local/man/man1/dejavu2.1.gz
+  sudo cp -p "$SHAREDIR"/dv2.1.gz /usr/local/man/man1/dv2.1.gz
+  sudo cp -p "$SHAREDIR"/dv2.1.gz /usr/local/man/man1/dejavu2.1.gz
   sudo mandb -sq
 
   # ~/.bashrc /etc/bash.bashrc
-  local tmpfile file
+  local -- tmpfile file
   tmpfile="/tmp/$PRG-$RANDOM"
   for file in "$HOME/.bashrc" /etc/bash.bashrc; do
     ((verbose_)) && echo "Modifying '$file'"

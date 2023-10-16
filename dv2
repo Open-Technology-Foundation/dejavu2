@@ -111,12 +111,15 @@ declare -a CONF_FILES=()
 declare -- Conf_File=''
 declare -n AGENT_FILES=CONF_FILES
 declare -n Agent_File=Conf_File
+declare -n DV2_AGENTS_DIR=APP_USER_HOME
 
 # READ stdlib ==========================================================
 source "$PRGDIR"/.sys_lib
 
 declare -a sys_vars=(
     Agent_File Conf_File
+    ''
+    DV2_AGENTS_DIR APP_USER_HOME
     ''
     system user assistant
     ''
@@ -412,7 +415,7 @@ main() {
           # Ignore blank and #comment lines
           [[ -z "$content" || ${content:0:1} == '#' ]] && continue
           [[ $content == '/' ]] \
-              && { print_script_command_help; continue; }
+              && { print_script_command_help; cmd_type='/'; continue; }
           [[ $content == '//' ]] \
               && { $man "$PRG"; continue; }
           [[ $content =~ ^//[a-zA-Z].* ]] \
@@ -422,7 +425,7 @@ main() {
           break
         done
         start_time="$(date +%s%N)"
-        # Is it a DV script /command?
+        # Is it a DV2 /command?
         if [[ ${content:0:1} == '/' ]]; then
           cmd_type='/'
         # Is it a shell !command?
@@ -454,7 +457,7 @@ main() {
                 read -r -n 1 -i y -p "$PRG: Do you wish to save it? y/n "
                 echo
                 [[ "$REPLY" == 'y' ]] || return 0
-                Cmd_Cache+=( '/save' )
+                Cmd_Cache+=( '/save' '/exit now' )
               else
                 return 0
               fi
@@ -615,7 +618,7 @@ main() {
           agents)
               [[ -z "$cmd_args" ]] && cmd_args=$PWD
               local _dir
-              local -a _files=()
+              local -a _files
               _files=( $( \
                 ( for _dir in "$PRGDIR" /etc/default "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR" "$HOME/.$PRG"; do
                     find "$_dir" \
@@ -690,6 +693,7 @@ main() {
               unset _dir _ccc _sel _files _selected reply
               ;;
           load)
+              cmd_args=$(eval "echo -ne $cmd_args")
               [[ -f $cmd_args ]] || { msg.err "${FUNCNAME[0]}: Agent File '$cmd_args' not found."; continue; }
               load_agent_file "$cmd_args"
               change_flag=1
