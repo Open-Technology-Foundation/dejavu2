@@ -3,6 +3,8 @@
 set -e
 shopt -s extglob globstar checkwinsize
 
+declare -ar PRGNAME=( DéjàVu-DéjàVu DéjàVu2 DV2 dv2 )
+
 declare -- AUTHOR='Gary Dean, garydean@okusi.id'
 declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
 
@@ -56,7 +58,6 @@ set_readline_history_file() {
   declare -xg HISTTIMEFORMAT='%m-%d_%T '
   history -r "$HISTFILE"
 }
-set_readline_history_file
 
 # interactive settings ---------------------------------------------------------
 declare -i verbose=1
@@ -217,11 +218,11 @@ load_agent_file "${AGENT_FILES[@]}"
 declare -- on_error='exit'
 # trap EXIT
 trap_exit() {
-  local -i err=$?
-  (($#)) && err=$1
+  local -i _err=$?
+  (($#)) && _err=$1
   exec 0</dev/tty
-  ((verbose && err && err!=4)) && msg.err "error: $err"
-  exit "$err"
+  ((verbose && _err && _err!=4)) && msg.err "error: $_err"
+  exit "$_err"
 }
 trap 'trap_exit' EXIT
 declare -r trap_EXIT="$(trap -p EXIT)"
@@ -249,7 +250,7 @@ trap 'trap_error; ret_value=$?; [ $ret_value -eq 1 ] && exit 1' ERR
 declare -r trap_ERR="$(trap -p ERR)"
 # trap int (ctrl-c)
 trap_int() {
-  ((verbose && interactive)) && >&2 echo
+  ((verbose && interactive)) && echo >&2
   exit 4
 }
 trap 'trap_int' SIGINT
@@ -259,6 +260,8 @@ set +e
 ## NOTE: all untrapped errors from now on
 ##       are handled by trap_error().
 # -- end on_error --------------------------------------------------
+
+set_readline_history_file
 
 #===================================================================
 main() {
@@ -452,9 +455,9 @@ main() {
         on_error='stop'
         case "$cmd" in
           quit|exit|q)
-              if ((change_flag && interactive)) && [[ ${cmd_args,,} != 'now' ]]; then
-                msg "$PRG: This session has not been saved."
-                read -r -n 1 -i y -p "$PRG: Do you wish to save it? y/n "
+              if ((!exit_on_completion)) && ((change_flag && interactive)) && [[ ${cmd_args,,} != 'now' ]]; then
+                msg.info "$PRG: Session has not been saved."
+                read -r -n 1 -i y -p "$PRG: Save session? y/n "
                 echo
                 [[ "$REPLY" == 'y' ]] || return 0
                 Cmd_Cache+=( '/save' '/exit now' )
@@ -524,6 +527,49 @@ main() {
               ;;
           shell)
               dv_shell "$SHELL -c '$cmd_args'" resume stop
+              ;;
+          status_clear)
+              ((verbose>1)) && msg.info "$cmd: clearing push/pop cache"
+              [[ -v DV2_SESSION_ID ]] || { declare -g DV2_SESSION_ID="push-$RANDOM-$RANDOM-420"; }
+              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
+              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
+              find "$_cache_dir" -maxdepth 1 -name "*-push.bash" -type f -delete
+              ((verbose>1)) && msg.info "$cmd: cleared $_cache_dir"
+              unset _cache_file _cache_dir
+              ;;
+          status_pop)
+              [[ -v DV2_SESSION_ID ]] || { msg.err "Nothing has been pushed."; continue; }
+              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
+              ((verbose>1)) && msg.info "$cmd: Popping status"
+              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
+              local -- _cache_file
+              _cache_file=$(find "$_cache_dir" -maxdepth 1 -name "*-push.bash" -type f | sort | tail -n1)
+              if [[ -z "_cache_file" ]]; then
+                msg.err "$cmd: No status files found"
+                continue
+              fi
+              source "$_cache_file" 2>/dev/null || true
+              rm -f -- "$_cache_file"
+              ((verbose>1)) && msg.info "$cmd: removed $_cache_file"
+              unset _cache_file _cache_dir
+              ;;
+          status_push)
+              ((verbose>1)) && msg.info "$cmd: Pushing status"
+              [[ -v DV2_SESSION_ID ]] || { declare -g DV2_SESSION_ID="push-$RANDOM-$RANDOM-420"; }
+              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
+              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
+              local -- _cache_file="$_cache_dir/$(date -In)-push.bash"
+              local _var _str=''
+              ( echo '#!/bin/bash'
+                for _var in "${sys_vars[@]}"; do
+                  [[ -z "$_var" ]] && { echo; continue; }
+                  _declarep "$_var" \
+                      || { _str="$cmd: Variable '$_var' not found.";
+                           msg.err "$_str"; echo "# $_str"; }
+                done
+              ) > "$_cache_file"
+              ((verbose>1)) && msg.info "$cmd: added $_cache_file"
+              unset _cache_file _cache_dir _var _str
               ;;
           status) (
               echo "# $PRGVER"
@@ -617,10 +663,13 @@ main() {
               ;;
           agents)
               [[ -z "$cmd_args" ]] && cmd_args=$PWD
+              local -a dvpaths=( "$cmd_args" )
+              [[ $cmd_args == 'all' ]] && dvpaths+=( "$PRGDIR" /etc/default )
+              dvpaths+=( "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR/agents" "$HOME/.$PRG" )
               local _dir
               local -a _files
               _files=( $( \
-                ( for _dir in "$PRGDIR" /etc/default "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR" "$HOME/.$PRG"; do
+                ( for _dir in "${dvpaths[@]}"; do
                     find "$_dir" \
                       -maxdepth 2 \
                       \( -name "*dv2.conf" -o -name "*.agent.dv2" \) \
@@ -655,7 +704,7 @@ main() {
                 for _dir in "${_files[@]}"; do
                   if [[ -d "$_dir" ]]; then
                     _newdir=$_dir
-                    echo "$((++_ccc)) > ${_dir/"$PWD/"/}"
+                    echo "$((++_ccc)) . ${_dir/"$PWD/"/}"
                   else
                     echo "$((++_ccc))     ${_dir/"$_newdir/"/}"
                   fi
@@ -911,39 +960,46 @@ dv_shell() {
 # Models ---------------------------------------------------------------------------
 declare -a Models=()
 get_openai_models() {
-  local -i force=${1:-0}
-  local -- engines_file="$PRGDIR"/openai.engines.list
-  if [[ -f "$engines_file" ]] && ((force==0)); then
-    Models=( $(cat -s "$engines_file") )
+  local -i _force=${1:-0}
+  local -- _engines_file="${DV2_AGENTS_DIR:-"$PRGDIR"}"/openai.engines.list
+  if [[ ! -f "$_engines_file" ]]; then
+    _force=1
   else
+    # Force update if more than 5 days old.
+    (( ($(stat --printf='%Y' "$_engines_file") + 432000) < "$(date +%s)" )) && _force=1
+  fi
+  if ((_force)); then
+    ((verbose)) && msg.info "Updating openAI engines list"
     Models=( $($openai api engines.list \
               |grep '"id":' |sed 's/"id"://; s/",//' \
-              |tr -d '" ' | grep ^gpt- |sort) ) \
-      && printf '%s\n' "${Models[@]}" >"$engines_file"
+              |tr -d '" ' | grep ^gpt- |sort -u) ) \
+      && printf '%s\n' "${Models[@]}" >"$_engines_file"
+  else
+    Models=( $(cat -s "$_engines_file") )
   fi
 }
 get_openai_models 0
 
 # Context Window ("token_limit") ---------------------------------------------------
 context_window() {
-  local -i k=2000
-  (($#)) || { echo -n "$k"; return 0; }
-  [[ "$1" =~ ^gpt-.*-([0-9]+)k ]] \
+  local -i _k=2000
+  (($#)) || { echo -n "$_k"; return 0; }
+  [[ "$1" =~ ^gpt-.*-([0-9]+)_k ]] \
     && { echo -n "${BASH_REMATCH[1]}000"; return 0; }
-  local -a arr=()
-  readarray -t -d '-' arr <<<"$1"
-  ((${#arr[@]})) && arr[-1]="${arr[-1]%$'\n'}"
-  if    [[ ${arr[1]} == '4' ]];   then k=8000
-  elif  [[ ${arr[1]} == '3.5' ]]; then k=4000
+  local -a _arr=()
+  readarray -t -d '-' _arr <<<"$1"
+  ((${#_arr[@]})) && _arr[-1]="${_arr[-1]%$'\n'}"
+  if    [[ ${_arr[1]} == '4' ]];   then _k=8000
+  elif  [[ ${_arr[1]} == '3.5' ]]; then _k=4000
   fi
-  echo -n "$k"
+  echo -n "$_k"
 }
 token_limit=$(context_window "$model")
 
 # Help ------------------------------------------------------------
 usage() {
 cat <<EOT
-# DéjàVu-DéjàVu - AI Chatbot/Scriptbot for Bash terminal - ver $version
+# ${PRGNAME} - AI Chatbot/Scriptbot for Bash terminal - ver $version
 
 __"it's dejavu all over again."__
 
@@ -979,7 +1035,7 @@ AI Agent creation and scripting for Bash terminal using openAI GPT models.
             eg, -g user "How did I get here?"
 
   -c|--command|--cmd "[/]cmd"
-            Add $PRG /slash command _or_ gpt user prompt to command
+            Add ${PRGNAME[2]} /slash command _or_ gpt user prompt to command
             stack (Cmd_Cache[]).
             Can be used multiple times.
 
@@ -1017,10 +1073,10 @@ AI Agent creation and scripting for Bash terminal using openAI GPT models.
 
   -a|--autosave on|off
             If on, upon exit, append current conversation to current
-            DV2 script. Default is off.
+            ${PRGNAME[2]} script. Default is off.
 
   -u|--upgrade
-             Upgrade DéjàVu from git repository.
+             Upgrade ${PRGNAME[1]} from git repository.
              Git repository is set to:
                 $URL
 

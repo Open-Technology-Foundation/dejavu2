@@ -23,6 +23,7 @@ declare -a GLOBAL_VARS=(
   ''
   CONF_FILES
   Conf_File
+  APP_USER_HOME
   ''
   verbose
   ''
@@ -77,7 +78,6 @@ unset sys_file fb dotvar
 # Import lib modules -------------------------------------------------
 declare _libfile
 mapfile -t  LIBFILES < <(find "${PRGDIR}/.sys_libs/" -type f )
-#mapfile -t  LIBFILES < <(find "${PRGDIR}/g-s-a.libs/" -type f )
 for _libfile in "${LIBFILES[@]}"; do
 	[[ -r "$_libfile" ]] && { source "$_libfile" || exit 1; }
 done
@@ -127,10 +127,11 @@ PRGVER="$PRG $version"
 
 
 # config/Agent files, in order of reading. -----------------------------
-declare -- APP_USER_HOME="$HOME/.$PRG"
+declare -- APP_USER_HOME
+APP_USER_HOME=$(readlink -fn -- "$HOME/.$PRG")
 [[ -d "$APP_USER_HOME" ]] || {
-  APP_USER_HOME="$HOME/$PRG"
-  [[ -d "$APP_USER_HOME" ]] || mkdir -m 0755 "$HOME/.$PRG"
+  APP_USER_HOME=$(readlink -fn -- "$HOME/$PRG")
+  [[ -d "$APP_USER_HOME" ]] || mkdir -m 0755 -p -- "$APP_USER_HOME"
 }
 CONF_FILES=(  "$PRGDIR/$PRG.conf" 
               "/etc/default/$PRG.conf" 
