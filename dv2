@@ -1,5 +1,5 @@
 #!/bin/bash
-#!shellcheck disable=SC2188,SC2034,SC1090,SC1091,SC2155,SC2154
+#!shellcheck disable=SC2188,SC2034,SC1090,SC1091,SC2155,SC2154,SC2174
 set -e
 shopt -s extglob globstar checkwinsize
 
@@ -46,6 +46,7 @@ declarep() {
 }
 
 # readline history -------------------------------------------------------------
+#shellcheck disable=SC2120,SC2015
 set_readline_history_file() {
   [[ -f "${HISTFILE:-}" ]] && history -a "$HISTFILE" || true
   local -- histfile=${1:-}
@@ -65,6 +66,7 @@ declare -i wordwrap=1
 declare -- less=cat
 declare -i interactive
 interactive=$(  [ -t 0 ] && echo 1 || echo 0 )
+#shellcheck disable=SC2209
 set_interactive() {
   [[ -z "${1:-}" ]] && { _declarep interactive wordwrap less; return 0; }
   if [[ $1 == 'on' ]] || (($1 > 0)); then
@@ -228,6 +230,7 @@ trap_exit() {
   local -i _err=$?
   (($#)) && _err=$1
   exec 0</dev/tty
+  [[ -d "${DV2_CACHE_DIR:-}" ]] && { rm -rf "$DV2_CACHE_DIR" || true; }
   ((verbose && _err && _err!=4)) && msg.err "error: $_err"
   exit "$_err"
 }
@@ -385,7 +388,7 @@ main() {
     exec 3<&0
     # Read from the original stdin (now on fd 3)
     while read -u 3 -r _line; do
-      ([[ -z "$_line" ]] || [[ "${_line:0:1}" == '#' ]]) && continue
+      { [[ -z "$_line" ]] || [[ "${_line:0:1}" == '#' ]]; } && continue
       Cmd_Cache+=( "$_line" )
     done
     # Restore stdin to terminal for further input
@@ -410,7 +413,7 @@ main() {
     while ((1)); do
       # -- line off--------------------------------------------
       if ((verbose && statusline)); then
-        local _prompt="#!$system $USER@$HOSTNAME:" _elapsed_s
+        local -- _prompt="#!$system $USER@$HOSTNAME:" _elapsed_s
         (( ${#PWD} > 43 )) \
             && _prompt+="...${PWD: -40}" \
             || _prompt+="$PWD"
@@ -602,12 +605,12 @@ main() {
               unset _cache_file _var _str
               ;;
           status) (
-              echo "# $PRGVER"
+              echo "# $PRGVER -- $(date +'%F %T %z') --"
               local _var _str=''
               for _var in "${sys_vars[@]}"; do
-                [[ -z "$_var" ]] && { echo; continue; }
+                [[ -z "$_var" || "${_var:0:1}" == '#' ]] && { echo "$_var"; continue; }
                 _str=$(_declarep "$_var" \
-                  || { msg.err "Variable '$_var' not found."; echo ''; } )
+                  || { msg.err "$cmd: Variable '$_var' not found."; echo ''; } )
                 [[ -z "$_str" ]] && continue
                 echo -n '    '
                 echo "$_str" | cut -d' ' -f2-
@@ -616,8 +619,8 @@ main() {
                 echo
                 echo '# GLOBAL_VARS[@]'
                 for _var in "${GLOBAL_VARS[@]}"; do
-                  [[ -z "$_var" ]] && { echo; continue; }
-                  _str=$(_declarep "$_var" || { msg.err "Variable '$_var' not found."; echo ''; } )
+                  [[ -z "$_var"  || "${_var:0:1}" == '#' ]] && { echo "$_var"; continue; }
+                  _str=$(_declarep "$_var" || { msg.err "$cmd: Variable '$_var' not found."; echo ''; } )
                   [[  -z "$_str" || "$_str" == *"$LF"* \
                       || "$_str" == *'GLOBAL_VARS'* ]] \
                     && continue
@@ -755,10 +758,11 @@ main() {
                 [[ -z "$_sel" ]] || (( _sel == 0 || _sel > ${#_files[@]} )) \
                   && continue
                 _selected="${_files[$((_sel-1))]}"
+                #shellcheck disable=SC2015
                 if [[ $reply == 'c' ]]; then
-                  [[ -d "$_selected" ]] \
-                    && cd "$_selected" \
-                    || cd $(dirname -- "$_selected")
+                  [[ ! -d "$_selected" ]] \
+                    && _selected="$(dirname -- "$_selected")"
+                  cd "$_selected" || true
                   continue
                 elif [[ $reply == 'l' ]]; then
                   Cmd_Cache+=( "/load \"$_selected\"" )
@@ -831,6 +835,7 @@ main() {
                 messages+=( "${g_messages[$((_i+1))]}:${g_messages[$((_i+2))]//$'\n'/\\n}" )
               done
               local -- _msg
+              #shellcheck disable=SC2094
               ( echo "#!/bin/bash"
                 echo
                 echo "# Agent '$(basename "$_filename")'"
@@ -974,12 +979,12 @@ main() {
 #shellcheck disable=SC2064
 dv_shell() {
   on_error="${2:-resume}"
-  trap - STOP INT ABRT KILL ERR EXIT
+  trap - INT ABRT ERR EXIT
   set +e ## NOTE
   eval "${1:-bash}"; true
   set +e ## NOTE
-  trap "$trap_EXIT" EXIT KILL
-  trap "$trap_ERR"  ERR STOP
+  trap "$trap_EXIT" EXIT
+  trap "$trap_ERR"  ERR
   trap "$trap_INT"  INT
   on_error="${3:-stop}"
 }
@@ -996,6 +1001,7 @@ get_openai_models() {
     # Force update if more than 5 days old.
     (( ($(stat --printf='%Y' "$_engines_file") + 432000) < "$(date +%s)" )) && _force=1
   fi
+  #shellcheck disable=SC2207
   if ((_force)); then
     ((verbose)) && msg.info "Updating openAI engines list"
     Models=( $($openai api engines.list \
@@ -1026,6 +1032,7 @@ token_limit=$(context_window "$model")
 
 # Help ------------------------------------------------------------
 usage() {
+#shellcheck disable=SC2128
 cat <<EOT
 # ${PRGNAME} - AI Chatbot/Scriptbot for Bash terminal - ver $version
 
