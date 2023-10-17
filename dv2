@@ -112,15 +112,25 @@ declare -a CONF_FILES=()
 declare -- Conf_File=''
 declare -n AGENT_FILES=CONF_FILES
 declare -n Agent_File=Conf_File
-declare -n DV2_AGENTS_DIR=APP_USER_HOME
+declare -n DV2_USER_HOME=APP_USER_HOME
+declare -- DV2_AGENTS_HOME="$DV2_USER_HOME/agents"
+declare -- DV2_SESSION_ID="-$RANDOM-$RANDOM-420"
+Cache_Dir="$Cache_Dir/$DV2_SESSION_ID"
+declare -n DV2_CACHE_DIR=Cache_Dir
+[[ -d "$DV2_CACHE_DIR" ]] || mkdir -m 0775 -p -- "$DV2_CACHE_DIR"
 
 # READ stdlib ==========================================================
 source "$PRGDIR"/.sys_lib
 
 declare -a sys_vars=(
-    Agent_File Conf_File
+    CONF_FILES AGENT_FILES
+    Conf_File Agent_File
     ''
-    DV2_AGENTS_DIR APP_USER_HOME
+    APP_USER_HOME DV2_USER_HOME
+    ''
+    DV2_AGENTS_HOME
+    ''
+    Cache_Dir DV2_CACHE_DIR
     ''
     system user assistant
     ''
@@ -128,15 +138,12 @@ declare -a sys_vars=(
     token_limit max_tokens auto_max_tokens
     temperature top_p n stop
     ''
-    verbose interactive wordwrap less  exit_on_completion
+    verbose interactive wordwrap less exit_on_completion
     ''
     languages language
     ''
     HISTFILE
     ''
-    AGENT_FILES CONF_FILES
-    ''
-    trap_INT trap_ERR trap_EXIT
 )
 
 # g_messages[] -----------------------------------------------------------------------------
@@ -253,8 +260,26 @@ trap_int() {
   ((verbose && interactive)) && echo >&2
   exit 4
 }
-trap 'trap_int' SIGINT
-declare -r trap_INT="$(trap -p SIGINT)"
+trap 'trap_int' INT ABRT
+declare -r trap_INT="$(trap -p INT)"
+traps() {
+  local -a _arr=()
+  local -i _n
+  local -- _s _sn
+  msg "Current Traps:"
+  trap -p |sed "s/^/    /g"
+  echo
+  msg "All Signals:"
+  readarray -t -d$'\t' _arr < <(trap -l |tr $'\n' $'\t')
+  ((${#_arr[@]})) && _arr[-1]="${_arr[-1]%$'\n'}"
+  for _s in "${_arr[@]}"; do
+    [[ -z "$_s" ]] && continue
+    _sn=${_s%)*}
+    [[ -z "$_sn" ]] && continue
+    _n=$(("$_sn")) 2>/dev/null || continue
+    echo "${_s// SIG/ } $(trap -p "$_n")"
+  done |sort -k2 |sed "s/^/    /g"
+}
 
 set +e
 ## NOTE: all untrapped errors from now on
@@ -406,7 +431,7 @@ main() {
           content=${Cmd_Cache[0]}
           ((verbose)) && {
             echo
-            echo "$user: $content"
+            echo "[$(((${#g_messages[@]}/3)-1))] $user: $content"
           }
         fi
         unset 'Cmd_Cache[0]'; Cmd_Cache=("${Cmd_Cache[@]:1}")
@@ -414,7 +439,7 @@ main() {
         # Interactive ------------------------------------------
         echo
         while((1)); do
-          read -er -i "$cmd_type" -p "$PRG: $user: " content
+          read -er -i "$cmd_type" -p "[$((${#g_messages[@]}/3))] $user: " content
           # Ignore blank and #comment lines
           [[ -z "$content" || ${content:0:1} == '#' ]] && continue
           [[ $content == '/' ]] \
@@ -530,39 +555,38 @@ main() {
               ;;
           status_clear)
               ((verbose>1)) && msg.info "$cmd: clearing push/pop cache"
-              [[ -v DV2_SESSION_ID ]] || { declare -g DV2_SESSION_ID="push-$RANDOM-$RANDOM-420"; }
-              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
-              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
-              find "$_cache_dir" -maxdepth 1 -name "*-push.bash" -type f -delete
-              ((verbose>1)) && msg.info "$cmd: cleared $_cache_dir"
-              unset _cache_file _cache_dir
+              find "$DV2_CACHE_DIR" -maxdepth 1 -name "*-push.bash" -type f -delete
+              ((verbose>1)) && msg.info "$cmd: cleared '$DV2_CACHE_DIR'"
               ;;
           status_pop)
-              [[ -v DV2_SESSION_ID ]] || { msg.err "Nothing has been pushed."; continue; }
-              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
               ((verbose>1)) && msg.info "$cmd: Popping status"
-              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
               local -- _cache_file
-              _cache_file=$(find "$_cache_dir" -maxdepth 1 -name "*-push.bash" -type f | sort | tail -n1)
-              if [[ -z "_cache_file" ]]; then
-                msg.err "$cmd: No status files found"
+              _cache_file="$(find "$DV2_CACHE_DIR" -maxdepth 1 -name "*-push.bash" -type f | sort | tail -n1)"
+              if [[ -z "$_cache_file" ]]; then
+                msg.err "$cmd: No status push files found"
                 continue
               fi
-              source "$_cache_file" 2>/dev/null || true
-              rm -f -- "$_cache_file"
-              ((verbose>1)) && msg.info "$cmd: removed $_cache_file"
-              unset _cache_file _cache_dir
+              if [[ -f "$_cache_file" ]]; then
+                source "$_cache_file" 2>/dev/null || true
+                rm -f -- "$_cache_file"
+                ((verbose>1)) && msg.info "$cmd: removed '$_cache_file'"
+              else
+                ((verbose>1)) && msg.err "$cmd: '$_cache_file' not found."
+              fi
+              unset _cache_file
               ;;
           status_push)
               ((verbose>1)) && msg.info "$cmd: Pushing status"
-              [[ -v DV2_SESSION_ID ]] || { declare -g DV2_SESSION_ID="push-$RANDOM-$RANDOM-420"; }
-              local -- _cache_dir="$DV2_AGENTS_DIR"/.cache/"$DV2_SESSION_ID"
-              [[ -d "$_cache_dir" ]] || mkdir -m 0775 -p -- "$_cache_dir"
-              local -- _cache_file="$_cache_dir/$(date -In)-push.bash"
+              if [[ -n "$cmd_args" ]]; then
+                cmd_args="${cmd_args,,}"
+                [[ "$cmd_args" == 'all' ]] || {
+                  msg.err "$cmd: invalid argument '$cmd_args"
+                  continue
+                }
+              fi
+              local -- _cache_file="$DV2_CACHE_DIR/$(date -In |tr '+:T,' '_')-push.bash"
               local _var _str=''
               ( echo '#!/bin/bash'
-                _declarep system user assistant
-                _declarep primary_directive
                 echo
                 for _var in "${sys_vars[@]}"; do
                   [[ -z "$_var" ]] && { echo; continue; }
@@ -570,9 +594,12 @@ main() {
                       || { _str="$cmd: Variable '$_var' not found.";
                            msg.err "$_str"; echo "# $_str"; }
                 done
+                _declarep system user assistant
+                _declarep primary_directive
+                [[ $cmd_args == 'all' ]] && _declarep messages
               ) > "$_cache_file"
-              ((verbose>1)) && msg.info "$cmd: added $_cache_file"
-              unset _cache_file _cache_dir _var _str
+              ((verbose>1)) && msg.info "$cmd$([[ -n "$cmd_args" ]] && echo ' all'): added '$_cache_file'"
+              unset _cache_file _var _str
               ;;
           status) (
               echo "# $PRGVER"
@@ -668,7 +695,7 @@ main() {
               [[ -z "$cmd_args" ]] && cmd_args=$PWD
               local -a dvpaths=( "$cmd_args" )
               [[ $cmd_args == 'all' ]] && dvpaths+=( "$PRGDIR" /etc/default )
-              dvpaths+=( "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR/agents" "$HOME/.$PRG" )
+              dvpaths+=( "$PWD" "$PWD/.$PRG" "$DV2_USER_HOME/agents" "$HOME/.$PRG" )
               local _dir
               local -a _files
               _files=( $( \
@@ -756,7 +783,7 @@ main() {
               local -a _dirs=() _files=()
               local -i _ccc=0 _sel=0
               [[ -z "$cmd_args" ]] \
-                  && _dirs=( "$PWD" "$PWD/.$PRG" "$DV2_AGENTS_DIR" "$HOME/.$PRG" "$PRGDIR" ) \
+                  && _dirs=( "$PWD" "$PWD/.$PRG" "$DV2_USER_HOME" "$HOME/.$PRG" "$PRGDIR" ) \
                   || _dirs=( $(readlink -fn -- "$cmd_args") )
               _files=( $( \
                 ( for _dir in "${_dirs[@]}"; do
@@ -926,9 +953,9 @@ main() {
       g_messages_len+=${#content}
       ((verbose)) && echo
       if ((interactive && wordwrap)); then
-        echo "$assistant: $content" | fmt -w ${COLUMNS:-78} | $less
+        echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | fmt -w ${COLUMNS:-78} | $less
       else
-        echo "$assistant: $content"
+        echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content"
       fi
     fi
 
@@ -947,13 +974,13 @@ main() {
 #shellcheck disable=SC2064
 dv_shell() {
   on_error="${2:-resume}"
-  trap - SIGINT ERR EXIT
+  trap - STOP INT ABRT KILL ERR EXIT
   set +e ## NOTE
   eval "${1:-bash}"; true
   set +e ## NOTE
-  trap "$trap_EXIT" EXIT
-  trap "$trap_ERR"  ERR
-  trap "$trap_INT"  SIGINT
+  trap "$trap_EXIT" EXIT KILL
+  trap "$trap_ERR"  ERR STOP
+  trap "$trap_INT"  INT
   on_error="${3:-stop}"
 }
 
@@ -962,7 +989,7 @@ dv_shell() {
 declare -a Models=()
 get_openai_models() {
   local -i _force=${1:-0}
-  local -- _engines_file="${DV2_AGENTS_DIR:-"$PRGDIR"}"/openai.engines.list
+  local -- _engines_file="${DV2_USER_HOME:-"$PRGDIR"}"/openai.engines.list
   if [[ ! -f "$_engines_file" ]]; then
     _force=1
   else
@@ -985,7 +1012,7 @@ get_openai_models 0
 context_window() {
   local -i _k=2000
   (($#)) || { echo -n "$_k"; return 0; }
-  [[ "$1" =~ ^gpt-.*-([0-9]+)_k ]] \
+  [[ "$1" =~ ^gpt-.*-([0-9]+)k ]] \
     && { echo -n "${BASH_REMATCH[1]}000"; return 0; }
   local -a _arr=()
   readarray -t -d '-' _arr <<<"$1"

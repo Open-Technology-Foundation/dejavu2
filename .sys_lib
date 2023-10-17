@@ -39,7 +39,7 @@ declare -a GLOBAL_VARS=(
 dump_global_vars() {
   local _v
   for _v in "${GLOBAL_VARS[@]}"; do
-    [[ -n "$_v" ]] && continue
+    [[ -n "$_v" || "${_v:0:1}" == '#' ]] && continue
     declare -p "$_v" || true
   done | sort -f
   unset _v
@@ -85,6 +85,7 @@ unset _libfile
 
 # Set short-form PRG name. --------------------------------------------
 PRG_short=$(g-s-a.short_name "$PRG")
+(( ${#PRG_short} < 3 )) && PRG_short="$PRG"
 
 # Make sure HOSTNAME, USER, EDITOR, and SHELL are defined. ------------
 if [[ -z "${HOSTNAME:-}"  ]]; then
@@ -142,22 +143,22 @@ Conf_File=${CONF_FILES[-1]}
 
 # misc -----------------------------------------------------------------
 # Terminal rows/columns
-[[ -z "$COLUMNS" ]] && declare -i COLUMNS=78
+[[ -z "${COLUMNS:-}" ]] && declare -i COLUMNS=78
 COLUMNS=${COLUMNS:-78}
-[[ -z "$LINES" ]] && declare -i LINES=24
+[[ -z "${LINES:-}" ]] && declare -i LINES=24
 LINES=${LINES:-24}
 
 # Define TMPDIR
-[[ -z "$TMPDIR" ]] && declare -- TMPDIR=/tmp
+[[ -z "${TMPDIR:-}" ]] && declare -- TMPDIR=/tmp
 
 # Define DEBUG
-[[ -z "$DEBUG" ]] && declare -i DEBUG=0
+[[ -z "${DEBUG:-}" ]] && declare -i DEBUG=0
 DEBUG=${DEBUG:-0}
 
 # app specific --------------------------------------------------------
-# *needs to exit
 # Cache Dir
+[[ -z "${Cache_Dir:-}" ]] && declare -- Cache_Dir
 Cache_Dir=/var/tmp/"$PRG_short"
-[[ -d $Cache_Dir ]] || mkdir -p "$Cache_Dir"
+[[ -d "$Cache_Dir" ]] || mkdir -m 0775 -p "$Cache_Dir"
 
 #fin
