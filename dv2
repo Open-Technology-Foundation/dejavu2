@@ -114,15 +114,14 @@ declare -a CONF_FILES=()
 declare -- Conf_File=''
 declare -n AGENT_FILES=CONF_FILES
 declare -n Agent_File=Conf_File
+# READ sys_lib ==========================================================
+source "$PRGDIR"/.sys_lib
 declare -n DV2_USER_HOME=APP_USER_HOME
 declare -- DV2_AGENTS_HOME="$DV2_USER_HOME/agents"
-declare -- DV2_SESSION_ID="-$RANDOM-$RANDOM-420"
+declare -- DV2_SESSION_ID="$(date +%s).$RANDOM.420"
 Cache_Dir="$Cache_Dir/$DV2_SESSION_ID"
 declare -n DV2_CACHE_DIR=Cache_Dir
 [[ -d "$DV2_CACHE_DIR" ]] || mkdir -m 0775 -p -- "$DV2_CACHE_DIR"
-
-# READ stdlib ==========================================================
-source "$PRGDIR"/.sys_lib
 
 declare -a sys_vars=(
     CONF_FILES AGENT_FILES
@@ -269,12 +268,12 @@ traps() {
   local -a _arr=()
   local -i _n
   local -- _s _sn
-  msg "Current Traps:"
+  echo "# Current Traps:"
   trap -p |sed "s/^/    /g"
   echo
-  msg "All Signals:"
+  echo "# All Signals:"
   readarray -t -d$'\t' _arr < <(trap -l |tr $'\n' $'\t')
-  ((${#_arr[@]})) && _arr[-1]="${_arr[-1]%$'\n'}"
+#  ((${#_arr[@]})) && _arr[-1]="${_arr[-1]%$'\n'}"
   for _s in "${_arr[@]}"; do
     [[ -z "$_s" ]] && continue
     _sn=${_s%)*}
@@ -282,6 +281,7 @@ traps() {
     _n=$(("$_sn")) 2>/dev/null || continue
     echo "${_s// SIG/ } $(trap -p "$_n")"
   done |sort -k2 |sed "s/^/    /g"
+  unset _arr _n _s _sn
 }
 
 set +e
@@ -591,15 +591,29 @@ main() {
               local _var _str=''
               ( echo '#!/bin/bash'
                 echo
+                echo "# GLOBAL_VARS[@]"
+                if [[ $cmd_args == 'all' ]]; then
+                  for _var in "${GLOBAL_VARS[@]}"; do
+                    [[ -z "$_var" || ${_var:0:1} == '#' ]] && { echo "$_var"; continue; }
+                    _declarep "$_var" \
+                        || { _str="$cmd: Variable '$_var' not found.";
+                             msg.err "$_str"; echo "# $_str"; }
+                  done
+                fi
+                echo
+                echo "# sys_vars[@]"
                 for _var in "${sys_vars[@]}"; do
-                  [[ -z "$_var" ]] && { echo; continue; }
+                  [[ -z "$_var" || ${_var:0:1} == '#' ]] && { echo "$_var"; continue; }
                   _declarep "$_var" \
                       || { _str="$cmd: Variable '$_var' not found.";
                            msg.err "$_str"; echo "# $_str"; }
                 done
+                echo
                 _declarep system user assistant
+                echo
                 _declarep primary_directive
-                [[ $cmd_args == 'all' ]] && _declarep messages
+                echo
+                [[ $cmd_args == 'all' ]] && { _declarep messages; echo; }
               ) > "$_cache_file"
               ((verbose>1)) && msg.info "$cmd$([[ -n "$cmd_args" ]] && echo ' all'): added '$_cache_file'"
               unset _cache_file _var _str
