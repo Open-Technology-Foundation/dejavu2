@@ -300,7 +300,7 @@ traps() {
   local -i _n
   local -- _s _sn
   echo "# Current Traps:"
-  trap -p |sed "s/^/    /g"
+  trap -p |sed "s/^/    /"
   echo
   echo "# All Signals:"
   readarray -t -d$'\t' _arr < <(trap -l |tr $'\n' $'\t')

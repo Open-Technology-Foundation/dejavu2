@@ -125,7 +125,7 @@ main() {
   sudo rsync -al etc/* "$SHAREDIR"/etc/
   sudo cp -p doc/makedoc "$SHAREDIR"/doc/
   sudo chmod 775 "$PRGDIR"/dv2
-  sudo cp -p dv2 dv2.install dv2.1.gz LICENSE README.md .sys_conf .sys_lib .sys_version "$SHAREDIR"/
+  sudo cp -p dv2 dv2.install dv2.1.gz LICENSE README.md .sys_conf .sys_lib .sys_version .version "$SHAREDIR"/
   set -e
   
   cd /usr/local/bin || { sudo mkdir -p -m 755 /usr/local/bin; cd /usr/local/bin; }
