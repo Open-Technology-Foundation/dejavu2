@@ -1,5 +1,5 @@
 #!/bin/bash
-#!shellcheck disable=SC2188,SC2034,SC1090,SC1091,SC2155,SC2154,SC2174
+#shellcheck disable=SC2155,SC2034,SC2174,SC1090,SC1091
 set -e
 shopt -s extglob globstar checkwinsize
 
@@ -14,6 +14,7 @@ declare -- PRG;     PRG=$(basename "$PRG0")
 
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
+declare -- version="$(head -qzn1 "$PRGDIR"/.version)"
 
 # basic application functions --------------------------------------------------
 # semantic helper functions
@@ -61,6 +62,7 @@ set_readline_history_file() {
 }
 
 # interactive settings ---------------------------------------------------------
+declare -i markdown=0
 declare -i verbose=1
 declare -i wordwrap=1
 declare -- less=cat
@@ -205,7 +207,7 @@ load_agent_file() {
 
 # READ CONFIG/AGENT FILES =====================================================
 declare -- _file
-while (($#)) && [[ ${1:0:1} != '-' ]]; do
+while(($#)) && [[ ${1:0:1} != '-' ]]; do
   _file=$(readlink -fn "$1")
   if [[ ! -f "$_file" ]]; then
     [[ "$_file" == *".agent.dv2" ]] && msg.die "File '$1' not found."
@@ -255,6 +257,7 @@ trap_error() {
   esac
   return 0
 }
+declare -i ret_value=0
 trap 'trap_error; ret_value=$?; [ $ret_value -eq 1 ] && exit 1' ERR
 declare -r trap_ERR="$(trap -p ERR)"
 # trap int (ctrl-c)
@@ -264,6 +267,34 @@ trap_int() {
 }
 trap 'trap_int' INT ABRT
 declare -r trap_INT="$(trap -p INT)"
+
+trap_push() {
+  ((verbose>1)) && msg.info "$cmd: Pushing traps"
+  local -- _cache_file="$DV2_CACHE_DIR/$(date -In |tr '+:T,' '_')-trap_push.bash"
+  trap -p >"$_cache_file"
+}
+trap_pop() {
+  ((verbose>1)) && msg.info "$cmd: Popping traps"
+  local -- _cache_file
+  _cache_file="$(find "$DV2_CACHE_DIR" -maxdepth 1 -name "*-trap_push.bash" -type f | sort | tail -n1)"
+  if [[ -z "$_cache_file" ]]; then
+    msg.err "$cmd: No trap files found to pop."
+    return 0
+  fi
+  if [[ -f "$_cache_file" ]]; then
+    source "$_cache_file" 2>/dev/null || true
+    rm -f -- "$_cache_file"
+    ((verbose>1)) && msg.info "$cmd: removed '$_cache_file'"
+  else
+    ((verbose>1)) && msg.err "$cmd: '$_cache_file' not found."
+  fi
+  return 0
+}
+trap_clear() {
+  ((verbose>1)) && msg.info "$cmd: clearing trap push cache"
+  find "$DV2_CACHE_DIR" -maxdepth 1 -name "*-trap_push.bash" -type f -delete
+  ((verbose>1)) && msg.info "$cmd: traps cleared '$DV2_CACHE_DIR'"
+}
 traps() {
   local -a _arr=()
   local -i _n
@@ -295,7 +326,7 @@ set_readline_history_file
 main() {
   local arg1=''
   # Process command line arguments and options
-  while (($#)); do
+  while(($#)); do
     # var=value arguments
     if [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
       arg1="${1%=*}"
@@ -315,10 +346,11 @@ main() {
                 shift; temperature=${1:-0.0072973525693}
                 ;;
       -g|--message)
-                shift; role="${1:-system}"; role=${role,,}
+                shift; (($# < 2)) && { msg.err "Option -g|--message requires two arguments."; return 22; }
+                role="${1,,}"
                 [[ $role == 'system' || $role == 'user' || $role == 'assistant' ]] \
-                    || { msg.err "Invalid -g option '$role'. Must be system, user, or assistant"; return 22; }
-                shift; content="${1:-}"
+                    || { msg.err "Invalid option -g|--message '$role'. Role must be system, user, or assistant."; return 22; }
+                shift; content="$1"
                 [[ -n "$content" ]] \
                     && messages+=( "$role: $content" )
                 ;;
@@ -394,23 +426,20 @@ main() {
     # Restore stdin to terminal for further input
     exec 0</dev/tty
   fi
-  ((exit_on_completion)) && Cmd_Cache+=( '/exit' )
+  ((exit_on_completion)) && Cmd_Cache+=( '/exit now' )
 
   # Grant default user names for terminal display.
   [[ -z "$system" ]]    && system="$PRG"
   [[ -z "$user" ]]      && user="$USER@$HOSTNAME"
   [[ -z "$assistant" ]] && assistant="$model"
 
-  local -- cmd_type='/'
-
-  # Get the start time in seconds and nanoseconds since the Unix epoch
-  local -- start_time
-  start_time="$(date +%s%N)"
-
   # main loop =========================================================
+  # Get the start time in seconds and nanoseconds since the Unix epoch
+  local -- start_time="$(date +%s%N)"
+  local -- cmd_type='/'
   while((1)); do
     used_tokens=$((g_messages_len / 4))
-    while ((1)); do
+    while((1)); do
       # -- line off--------------------------------------------
       if ((verbose && statusline)); then
         local -- _prompt="#!$system $USER@$HOSTNAME:" _elapsed_s
@@ -421,7 +450,7 @@ main() {
         _prompt+=" -- $used_tokens/$token_limit"
         (( (token_limit - max_tokens - used_tokens) < $((token_limit/10)))) \
             && _prompt+='!!'
-        _elapsed_s="$(echo "scale=3; $(( $(date +%s%N) - start_time )) / 1000000000" | bc)"
+        _elapsed_s="$(echo "scale=3; $(($(date +%s%N)-start_time)) / 1000000000" | bc)"
         _elapsed_s=${_elapsed_s:0:6}; [[ ${_elapsed_s: -1} == '.' ]] && _elapsed_s=${_elapsed_s:0:-1}
         _prompt+=" -- ${_elapsed_s}s"
         echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
@@ -429,7 +458,7 @@ main() {
       fi
 
       # Command Cache -----------------------------------------
-      if ((${#Cmd_Cache[@]})); then
+      if((${#Cmd_Cache[@]})); then
         if [[ -n ${Cmd_Cache[0]} ]]; then
           content=${Cmd_Cache[0]}
           ((verbose)) && {
@@ -531,7 +560,7 @@ main() {
                   local -- _oneshot_cmd
                   _oneshot_cmd="$(cat "$_file")"
                   rm -f "$_file"
-                  (( ${#_oneshot_cmd} < 2048 )) && history -s "$_oneshot_cmd"
+                  ((${#_oneshot_cmd} < 2048)) && history -s "$_oneshot_cmd"
                   Cmd_Cache+=( "$_oneshot_cmd" )
                   unset _oneshot_cmd _file _oneshot
                   break
@@ -650,7 +679,7 @@ main() {
               local -i _i _j _sel
               for((_i=0; _i<${#Models[@]}; _i++)); do
                 _j=$((_i+1))
-                printf '%s) %s\n' "$_j" "${Models[$_i]}"
+                printf '%s) %s\n' "$_j" "${Models[$_i]}$([[ $model == "${Models[$_i]}" ]] && echo '*')"
               done
               read -rp "$PRG: Select Model 0|1-${#Models[@]} " _sel
               ( [[ -z "$_sel" || $_sel == 'q' ]] \
@@ -845,7 +874,7 @@ main() {
               unset messages
               declare -ag messages=()
               local -i _i
-              for (( _i=0; _i<${#g_messages[@]}; _i+=3 )); do
+              for((_i=0; _i<${#g_messages[@]}; _i+=3)); do
                 messages+=( "${g_messages[$((_i+1))]}:${g_messages[$((_i+2))]//$'\n'/\\n}" )
               done
               local -- _msg
@@ -972,7 +1001,11 @@ main() {
       g_messages_len+=${#content}
       ((verbose)) && echo
       if ((interactive && wordwrap)); then
-        echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | fmt -w ${COLUMNS:-78} | $less
+        if ((markdown)); then
+          echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | md2ansi | $less
+        else
+          echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | fmt -w ${COLUMNS:-78} | $less
+        fi
       else
         echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content"
       fi
@@ -990,7 +1023,7 @@ main() {
 }
 
 # Shell -------------------------------------------------------------------------------
-#shellcheck disable=SC2064
+##shellcheck disable=SC2064
 dv_shell() {
   on_error="${2:-resume}"
   trap - INT ABRT ERR EXIT

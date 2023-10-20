@@ -77,9 +77,11 @@ unset sys_file fb dotvar
 
 # Import lib modules -------------------------------------------------
 declare _libfile
-mapfile -t  LIBFILES < <(find "${PRGDIR}/.sys_libs/" -type f )
+mapfile -t  LIBFILES < <(find "${PRGDIR}/.sys_libs/" \( -type f -o -type l \) )
 for _libfile in "${LIBFILES[@]}"; do
-	[[ -r "$_libfile" ]] && { source "$_libfile" || exit 1; }
+  _libfile=$(readlink -fn "$_libfile")
+	[[ -r "$_libfile" ]] || continue
+  source "$_libfile" || exit 1
 done
 unset _libfile
 

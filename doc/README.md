@@ -33,26 +33,23 @@
 : eg, -g user "How did I get here?"
 
 -k, **--token_limit** N
-: context window [token limit=16000]
-:    Usually calculated automatically (see --auto-max-tokens).
+: context window [token limit=16000]\n. Usually calculated automatically (see --auto-max-tokens).
 
 -M, **--max_tokens** N
-: response tokens [max_tokens=4000]
-:    Usually calculated automatically (see --auto-max-tokens).
+: response tokens [max_tokens=4000] Usually calculated automatically (see --auto-max-tokens).
 
--c, **--command**, *--cmd* "[/]cmd"
-: Add dv2 /slash command _or_ gpt user prompt to command stack (Cmd_Cache[]).
-: Can be used multiple times.
+-c, **--command**, *--cmd* { "/cmd" | "gpt_instruction" }
+: Add dv2 /slash command _or_ gpt user prompt to command stack (Cmd_Cache[]). Can be used multiple times.
 
 -L, **--languages** "lang1,lang2,..."
 : [languages='English Indonesian']
 
 -x, **--exit_on_completion**, --exit
-: [exit_on_completion='0']
-: Exit upon completion of commands/script.
+: [exit_on_completion='0'] Exit upon completion of commands/script.
 
 -v, **--verbose**
 : verbose=1 [verbose=1]
+
 -q, **--quiet**
 : verbose=0
 
@@ -60,26 +57,21 @@
 : statusline=0 [statusline=1]
 
 -i, **--interactive**
-: interactive=1 [interactive=1]
-: yes-no prompts are enabled.
+: interactive=1 [interactive=1] yes-no prompts are enabled.
+
 -y, **--not-interactive**
-: interactive=0
-: yes-no prompts are disabled; default y.
+: interactive=0 yes-no prompts are disabled; default y.
 
 -a, **--auto-max-tokens**
-: auto_max_tokens=1 [auto_max_tokens=1]
-: Enable dynamic calculation of max_tokens to maximum available.
+: auto_max_tokens=1 [auto_max_tokens=1] Enable dynamic calculation of max_tokens to maximum available.
 -A, **--no-auto-max-tokens**
-: auto_max_tokens=0
-: Disable dynamic calculation of max_tokens.
+: auto_max_tokens=0 Disable dynamic calculation of max_tokens.
 
 -a, **--autosave** on|off
 : If on, upon exit, append current messages to current dv script. Default is off.
 
 -u, **--upgrade**
-: Upgrade DV2 from git repository.
-: Git repository is set to:
-: https://github.com/Open-Technology-Foundation/dejavu2
+: Upgrade DV2 from git repository. Git repository is set to: https://github.com/Open-Technology-Foundation/dejavu2
 
 -V, **--version**
 : [version="dv2 0.4.20"], exit
@@ -108,7 +100,7 @@ DV2 has powerful scripting capabilities.  It brings the power of OpenAi's GPT mo
 Remembers context and history.  You and your AI can have multiple 'personalities', 'experts', tasks, etc.
 
 # Requirements
-For the moment, DV2 has only been tested on Ubuntu Linux 22.04.  Other platforms may require adjustments to the Python source code.
+For the moment, DV2 has only been tested on Ubuntu Linux 22.04.
 
 Other requirements are:
   - Python 3.10+
@@ -126,7 +118,7 @@ Installation One-Liner, if you're in a hurry:
 git clone https://github.com/Open-Technology-Foundation/dejavu2 /tmp/dejavu2 && /tmp/dejavu2/dv2.install
 ```
 
-`dv2.install` will detect these variables during installation.  If  it doesn't, check your environment.
+`dv2.install` will detect these variables during installation.  If it doesn't, check your environment.
 
 Once that's done, you're ready to install.  `dv2.install` will:
 

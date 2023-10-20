@@ -111,20 +111,21 @@ main() {
   if ((doApt)); then
     sudo apt update -q"$quiet_"
     sudo apt upgrade -q"$quiet_"
-    sudo apt install -q"$quiet_" python3 pip git bc pandoc
+    sudo apt install -q"$quiet_" python3 pip git bc pandoc shellcheck
   fi
 
   [[ -d "$SHAREDIR" ]] || sudo mkdir -m 0775 -p "$SHAREDIR"
   cd "$SHAREDIR"
 
   set +e
-  mkdir -m 0775 -p "$SHAREDIR"/{agents,doc,.sys_libs}
+  mkdir -m 0775 -p "$SHAREDIR"/{agents,doc,.sys_libs,etc}
   cd "$PRGDIR" || exit 1
   sudo rsync -al agents/* "$SHAREDIR"/agents/
   sudo rsync -al .sys_libs/* "$SHAREDIR"/.sys_libs/
+  sudo rsync -al etc/* "$SHAREDIR"/etc/
   sudo cp -p doc/makedoc "$SHAREDIR"/doc/
   sudo chmod 775 "$PRGDIR"/dv2
-  sudo cp -p dv2 dv2.install dv2.1.gz dv2.conf LICENSE README.md .sys_conf .sys_lib .sys_version "$SHAREDIR"/
+  sudo cp -p dv2 dv2.install dv2.1.gz LICENSE README.md .sys_conf .sys_lib .sys_version "$SHAREDIR"/
   set -e
   
   cd /usr/local/bin || { sudo mkdir -p -m 755 /usr/local/bin; cd /usr/local/bin; }
@@ -140,6 +141,9 @@ main() {
   sudo cp -p "$SHAREDIR"/dv2.1.gz /usr/local/man/man1/dv2.1.gz
   sudo cp -p "$SHAREDIR"/dv2.1.gz /usr/local/man/man1/dejavu2.1.gz
   sudo mandb -sq
+
+  # default config agent
+  sudo rsync -a etc/default/dv2.conf /etc/default/
 
   # ~/.bashrc /etc/bash.bashrc
   local -- tmpfile file
@@ -169,10 +173,11 @@ main() {
     echo
     echo "$PRGNAME is installed."
 		echo
-    echo "To run $PRGNAME, exit this shell, re-enter, then"
-    echo "  type 'dv2' or 'dejavu2'"
+    echo "To run $PRGNAME, enter 'dv2' or 'dejavu2'"
 		echo
-    echo "Want to help develop $PRGNAME? Join here:"
+    echo "Do you want to help develop and improve $PRGNAME?"
+    echo "Contribute here:"
+    echo
     echo "  $REPOSITORY"
 		echo
   fi
