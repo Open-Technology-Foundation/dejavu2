@@ -1004,7 +1004,8 @@ main() {
       if ((interactive && wordwrap)); then
         if ((markdown)); then
           if [[ -n "$mdless" ]]; then
-            echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | $md2less
+            echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | $mdless -cp
+            echo -e "$RESET"
           else
             echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | md2ansi | $less
           fi
