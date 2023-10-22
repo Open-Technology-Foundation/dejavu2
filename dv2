@@ -14,6 +14,7 @@ declare -- PRG;     PRG=$(basename "$PRG0")
 
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
+declare -- mdless=$(command -v mdless || true)
 declare -- version="$(head -qzn1 "$PRGDIR"/.version)"
 
 # basic application functions --------------------------------------------------
@@ -1002,7 +1003,11 @@ main() {
       ((verbose)) && echo
       if ((interactive && wordwrap)); then
         if ((markdown)); then
-          echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | md2ansi | $less
+          if [[ -n "$mdless" ]]; then
+            echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | $md2less
+          else
+            echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | md2ansi | $less
+          fi
         else
           echo "[$(((${#g_messages[@]}/3)-1))] $assistant: $content" | fmt -w ${COLUMNS:-78} | $less
         fi

@@ -8,8 +8,10 @@ declare -- version='0.4.20'
 
 md2ansi() {
   # ANSI Colour Palette
+  local -I  IFS
   local -- \
     CODE_BLOCK='\x1b[90m' \
+    TABLE_BLOCK='\x1b[90m' \
     HORIZONTAL_RULE='\x1b[36m' \
     BLOCKQUOTE='\x1b[35m' \
     ITALICS='\x1b[34m' \
@@ -38,12 +40,15 @@ md2ansi() {
     fi
 
     # Tables
-    if [[ $line == "|"* ]]; then
-      local -a _cols=() table_row=()
+#    if [[ $line == "|"* || $line =~ ^[[:space:]]*\| ]]; then
+    if [[ $line =~ ^[[:space:]]*\| ]]; then
+      local -a  _cols=()
       local -ai _max_widths=()
-      local -i _cols_n=0 _i
-      local -- _col _row _lineoff=''
-      while [[ $line == "|"* ]]; do
+      local -i  _cols_n=0 _i _nextrow=0
+      local --  _col _row
+      local -A  _table_rows=()
+      while [[ $line =~ ^[[:space:]]*\| ]]; do
+        line="$(trim "$line"))"
         # Remove starting and ending '|', and split the line into columns
         IFS='|' read -ra _cols <<< "${line:1}"
         ((${#_cols[@]})) \
@@ -52,7 +57,8 @@ md2ansi() {
         ((_cols_n)) || _cols_n=${#_cols[@]}
         # Remove leading and trailing spaces from each column
         for _i in "${!_cols[@]}"; do
-          _cols[$_i]="$(echo -e "${_cols[$_i]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+#          _cols[$_i]="$(echo -e "${_cols[$_i]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          _cols[$_i]="$(trim "${_cols[$_i]}")"
         done
         # Determine the max width for each column
         for _i in "${!_cols[@]}"; do
@@ -60,22 +66,49 @@ md2ansi() {
           ((${#_cols[$_i]} > ${_max_widths[$_i]})) \
             && _max_widths[$_i]=${#_cols[$_i]}
         done
-        # Add the columns to table row
-        _row='|'
+        # Add the column values to table row
         for((_i=0; _i<_cols_n; _i++)); do
-          printf -v _col " %-${_max_widths[$_i]}s |" "${_cols[$_i]}"
-          [[ ${_col:0:4} == ' ---' ]] && _col="${_col// /-}"
-          _row+="$_col"
+          _col="${_cols[$_i]}"
+          _table_rows[$_nextrow,$_i]="$_col"
         done
-        [[ ${_row:0:4} == '|---' && -z "$_lineoff" ]] \
-          && { _row="${_row//|/+}"; _lineoff="$_row" ; }
-        table_row+=( "$_row" )
-        IFS= read -r line
+        _nextrow+=1
+        IFS= read -r line || break
       done
-      [[ -n $_lineoff ]] && printf '%s\n' "$_lineoff"
-      printf '%s\n' "${table_row[@]}"
-      [[ -n $_lineoff ]] && printf '%s\n' "$_lineoff" ""
-      unset _cols table_row _max_widths _cols_n _i _col _row _lineoff
+      unset _col _row
+      local -i _col _row=0
+      local -- _hdr='|'
+      for((_col=0; _col<_cols_n; _col++)); do
+        _hdr+="$(printf     " %-${_max_widths[$_col]}s |" "${_table_rows[$_row,$_col]}")"
+      done
+      local -- _lineoff='|'
+      local -a _fmt=()
+      _row=1
+      for((_col=0; _col<_cols_n; _col++)); do
+        _line="${_table_rows[$_row,$_col]}"
+        if [[ "${line:0:1}" == ':' ]]; then
+          _fmt[$_col]='-'
+        elif [[ "${line:-1}" == ':' ]]; then
+          _fmt[$_col]=''
+        else
+          _fmt[$_col]='-'
+        fi
+        _lineoff+="$(printf " %-${_max_widths[$_col]}s-|" '-' |tr ' ' '-')"
+      done
+      _lineoff=${_lineoff//\|/\+}
+      echo -ne "$TABLE_BLOCK"
+      echo "$_lineoff"
+      echo "$_hdr"
+      echo "$_lineoff"
+      for((_row=2; _row<_nextrow; _row++)); do
+        echo -n '|'
+        for((_col=0; _col<_cols_n; _col++)); do
+          printf " %${_fmt[$_col]}${_max_widths[$_col]}s |" "${_table_rows[$_row,$_col]}"
+        done
+        echo
+      done
+      echo "$_lineoff"
+      echo -e "$RESET"
+      unset _cols _max_widths _cols_n _i _col _row _lineoff
       continue
     fi
 
@@ -120,6 +153,38 @@ md2ansi() {
     echo -e "$line"  | fmt -w ${COLUMNS:-78}
   done
 }
+
+center_text() {
+  local -i lpad=$((($2 - ${#1}) / 2))
+  local -i rpad=$((($2 - ${#1}) - lpad))
+  printf '%s%s%s' "$(printf "%0.s " $(seq 1 $lpad))" \
+                  "$1" \
+                  "$(printf "%0.s " $(seq 1 $rpad))"
+}
+declare -fx center_text
+
+trim() {
+  if (($#)); then
+    local -- v
+    if [[ $1 == '-e' ]]; then
+      shift
+      v="$(echo -en "$*")"
+    else
+      v="$*"
+    fi
+    v="${v#"${v%%[![:blank:]]*}"}"
+    echo -n "${v%"${v##*[![:blank:]]}"}"
+    #return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    local -- REPLY
+    while read -r; do
+      REPLY="${REPLY#"${REPLY%%[![:blank:]]*}"}"
+      echo "${REPLY%"${REPLY##*[![:blank:]]}"}"
+    done
+  fi
+}
+declare -fx trim
 
 # In script.sh
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
