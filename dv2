@@ -142,7 +142,7 @@ declare -a sys_vars=(
     token_limit max_tokens auto_max_tokens
     temperature top_p n stop
     ''
-    verbose interactive wordwrap less exit_on_completion
+    verbose interactive wordwrap less exit_on_completion markdown mdless
     ''
     languages language
     ''
@@ -884,22 +884,26 @@ main() {
               done
               local -- _msg
               #shellcheck disable=SC2094
-              ( echo "#!/bin/bash"
+              ( echo '#!/bin/bash'
                 echo
                 echo "# Agent '$(basename "$_filename")'"
                 echo "# Generated from $PRG session "
                 echo "# with Agent '$(basename -- "$Agent_File")'"
-                echo "# $(date -Is)"
+                echo "# $(date +'%F %T %z')"
                 echo
                 declarep 2 system
                 echo
                 declarep 2 user assistant
                 echo
-                declarep 2 model token_limit max_tokens auto_max_tokens temperature n top_p stop
+                declarep 2 model token_limit max_tokens auto_max_tokens
                 echo
-                declarep 2 verbose interactive wordwrap less
+                declarep 2 temperature n top_p stop
                 echo
-                #declarep 2 languages
+                declarep 2 verbose interactive exit_on_completion
+                echo
+                declarep 2 wordwrap markdown mdless less
+                echo
+                echo
                 echo -n 'languages=( '
                 for _msg in "${languages[@]}"; do
                   _msg="${_msg//\"/\\\"}"
@@ -909,13 +913,14 @@ main() {
                 echo
                 declarep 2 primary_directive
                 echo
-                #declarep 2 messages
-                echo 'messages=('
-                for _msg in "${messages[@]}"; do
-                  _msg="${_msg//\"/\\\"}"
-                  echo "\"$_msg\" "; echo
-                done
-                echo ')'
+                if ((${#messages[@]})); then
+                  echo 'messages=('
+                  for _msg in "${messages[@]}"; do
+                    _msg="${_msg//\"/\\\"}"
+                    echo "\"$_msg\" "; echo
+                  done
+                  echo ')'
+                fi
                 echo
                 echo '#fin'
               ) > "$_filename"
