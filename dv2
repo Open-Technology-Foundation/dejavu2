@@ -581,7 +581,11 @@ main() {
               unset _file _oneshot
               ;;
           cd|chdir)
-              cd "$cmd_args" || { msg.err "Failed to cd into '$cmd_args'"; }
+              if ((${#cmd_args})); then
+                cd "$cmd_args" || { msg.err "Failed to cd into '$cmd_args'"; }
+              else
+                pwd
+              fi
               ;;
           shell)
               dv_shell "$SHELL -c '$cmd_args'" resume stop
