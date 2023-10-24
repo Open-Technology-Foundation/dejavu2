@@ -7,28 +7,33 @@ declare -- PRGDIR=${_ent_0%/*}
 declare -- version='0.4.20'
 
 md2ansi() {
+  declare -Ii COLUMNS
+  ((COLUMNS)) || COLUMNS=78
+
   # Borrow IFS
   local -I IFS
   # ANSI Colour Palette
   local -- \
-    CODE_BLOCK='\x1b[90m' \
-    TABLE_BLOCK='\x1b[90m' \
-    HORIZONTAL_RULE='\x1b[36m' \
-    BLOCKQUOTE='\x1b[35m'
-  local -a ITALICS=(        '\x1b[2m' '\x1b[22m' ) # dim on-off
-  local -a BOLD=(           '\x1b[1m' '\x1b[22m' ) # bold on-off
-  local -a STRIKETHROUGH=(  '\x1b[9m' '\x1b[29m' ) # strikethrough on-off
-  local -a INLINE_CODE=(    '\x1b[2m' '\x1b[22m' ) # dim on-off
+    TEXT="\x1b[37;40;2m" \
+    CODE_BLOCK="\x1b[90m" \
+    TABLE_BLOCK="\x1b[90m" \
+    HORIZONTAL_RULE="\x1b[36m" \
+    BLOCKQUOTE="\x1b[48;5;236m"
+  local -a ITALICS=(      "\x1b[2m" "\x1b[22m" ) # italics dim on-off
+  local -a BOLD=(         "\x1b[1m" "\x1b[22m" ) # bold on-off
+  local -a STRIKETHROUGH=("\x1b[9m" "\x1b[29m" ) # strikethrough on-off
+  local -a INLINE_CODE=(  "\x1b[2m" "\x1b[22m" ) # dim on-off
   local -- \
-    LIST='\x1b[36m' \
-    H1='\x1b[31;1m' \
-    H2='\x1b[32;1m' \
-    H3='\x1b[33;1m' \
-    H4='\x1b[33m' \
-    H5='\x1b[34;1m' \
-    H6='\x1b[34m' \
-    RESET='\x1b[0m'
+    LIST="\x1b[36m" \
+    H1="\x1b[31;1m" \
+    H2="\x1b[32;1m" \
+    H3="\x1b[33;1m" \
+    H4="\x1b[33m" \
+    H5="\x1b[34;1m" \
+    H6="\x1b[34m" \
+    RESET="\x1b[0m"
   local -- line=''
+  echo -en "$TEXT"
   while IFS= read -r line; do
     # Code Block ^``` ^~~~
     if [[ "${line:0:3}" == '```' || "${line:0:3}" == '~~~' ]]; then
@@ -38,12 +43,14 @@ md2ansi() {
           && break
         echo -e "    ${CODE_BLOCK}${line}"
       done
-      echo -e "${CODE_BLOCK}~~~${RESET}"
+      echo -e "${CODE_BLOCK}~~~${TEXT}"
       continue
     fi
 
     # Tables ^[space]|space
-    if [[ $line =~ ^[[:space:]]*\| ]]; then
+    if [[ "$line" =~ ^([[:space:]]*)\|(.*) ]]; then
+#    if [[ $line  =~ ^[[:space:]]*\| ]]; then
+      table_indent="${#BASH_REMATCH[1]}"
       local -a  _cols=()
       local -ai _max_widths=()
       local -i  _cols_n=0 _i _nextrow=0
@@ -98,6 +105,7 @@ md2ansi() {
         _lineoff+="$(printf " %-${_max_widths[$_col]}s-|" '-' |tr ' ' '-')"
       done
       _lineoff=${_lineoff//\|/\+}
+      (
       echo -ne "$TABLE_BLOCK"
       echo "$_lineoff"
       echo "$_hdr"
@@ -116,10 +124,12 @@ md2ansi() {
         echo
       done
       echo "$_lineoff"
-      echo -e "$RESET"
+      echo -e "${RESET}${TEXT}"
+      ) | sed "s/^/$(printf '%0.s ' $(seq 1 $table_indent))/"
       unset _cols _max_widths _cols_n _i _col _row _lineoff
       continue
     fi
+    table_indent=0
 
     # Horizontal_Rules ^--- ^=== ^___
     if [[ ${line:0:3} == '---' ||  ${line:0:3} == '==='  ||  ${line:0:3} == '___' ]]; then
@@ -128,10 +138,18 @@ md2ansi() {
     fi
 
     # Blockquotes ^\>
-    if [[ "$line" =~ ^\> ]]; then
-      echo "$line" | sed -E "s/^> (.*)/  ${BLOCKQUOTE}> \1${RESET}/"
+    if [[ "$line" =~ ^([[:space:]]*)\>(.*) ]]; then
+      if((!blockquote_indent)); then
+        blockquote_indent="${#BASH_REMATCH[1]}"
+      fi
+      indent="$(printf '%0.s ' $(seq 1 $blockquote_indent))"
+      line="${BASH_REMATCH[2]}"
+      ( echo "$line" \
+        | fmt --goal=$((COLUMNS-5)) -w $((COLUMNS-5)) ) \
+          | sed "s/^/${TEXT}${indent}>${BLOCKQUOTE}/;s/\$/\x1b[K$TEXT/"
       continue
     fi
+    blockquote_indent=0
 
     # Bold **
     line=$(echo "$line" | sed -E "s/\*\*(.*?)\*\*/${BOLD[0]}\1${BOLD[1]}/g")
@@ -143,13 +161,12 @@ md2ansi() {
     line=$(echo "$line" | sed -E "s/\~\~(.*?)\~\~/${STRIKETHROUGH[0]}\1${STRIKETHROUGH[1]}/g")
 
     # Inline_Code `(.*?)`
-    #line=$(echo "$line" | sed -E "s/\`(.*?)\`/${INLINE_CODE[0]}\1${INLINE_CODE[1]}/g")
     line=$(transform_line "$line")
 
     # List ^[space]*\*space[.*]
-    line=$(echo "$line" | sed -E "s/^[ ]*\* (.*)/    ${LIST}* \1${RESET}/")
+    line=$(echo "$line" | sed -E "s/^[ ]*\* (.*)/    ${LIST}* \1${TEXT}/")
     # List ^[space]*\-space[.*]
-    line=$(echo "$line" | sed -E "s/^[ ]*\- (.*)/    ${LIST}- \1${RESET}/")
+    line=$(echo "$line" | sed -E "s/^[ ]*\- (.*)/    ${LIST}- \1${TEXT}/")
     # If it *is* a list line, print it out, get to next line.
     if [[ "$line" =~ ^[[:space:]]*[*-] ]]; then
       echo -e "$line"
@@ -157,14 +174,20 @@ md2ansi() {
     fi
 
     # Headers ^#..#space(.*)
-    line=$(echo "$line" | sed -E "s/^###### (.*)/${H6}\1${RESET}/")
-    line=$(echo "$line" | sed -E "s/^##### (.*)/${H5}\1${RESET}/")
-    line=$(echo "$line" | sed -E "s/^#### (.*)/${H4}\1${RESET}/")
-    line=$(echo "$line" | sed -E "s/^### (.*)/${H3}\1${RESET}/")
-    line=$(echo "$line" | sed -E "s/^## (.*)/${H2}\1${RESET}/")
-    line=$(echo "$line" | sed -E "s/^# (.*)/${H1}\1${RESET}/")
+    line=$(echo "$line" | sed -E "s/^###### (.*)/${H6}\1${TEXT}/")
+    line=$(echo "$line" | sed -E "s/^##### (.*)/${H5}\1${TEXT}/")
+    line=$(echo "$line" | sed -E "s/^#### (.*)/${H4}\1${TEXT}/")
+    line=$(echo "$line" | sed -E "s/^### (.*)/${H3}\1${TEXT}/")
+    line=$(echo "$line" | sed -E "s/^## (.*)/${H2}\1${TEXT}/")
+    line=$(echo "$line" | sed -E "s/^# (.*)/${H1}\1${TEXT}/")
 
-    echo -e "$line"  | fmt -w ${COLUMNS:-78}
+    # get rid of any leading ansi codes before sending
+    # through `fmt`
+    while [[ $line =~ ^$'\e'\[([0-9\;]*)m(.*) ]]; do
+      echo -en "\e[${BASH_REMATCH[1]}m"
+      line="${BASH_REMATCH[2]}"
+    done
+    echo -e "$line"  | fmt --goal=$((COLUMNS-5)) -w ${COLUMNS:-78}
   done
   echo -en "$RESET"
 }
@@ -182,11 +205,6 @@ transform_line() {
   new_line+="$line"
   echo -ne "$new_line"
 }
-# Example usage
-#INLINE_CODE=('\x1b[97m' '\x1b[0m')
-#line="This is `inline code` and this is another `inline code`."
-#transformed_line=$(transform_line "$line")
-#echo -e "$transformed_line"
 
 center_text() {
   local -i w=$1; shift
