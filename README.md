@@ -101,6 +101,8 @@ DV2 has powerful scripting capabilities.  It brings the power of OpenAi's GPT mo
 
 Remembers context and history.  You and your AI can have multiple 'personalities', 'experts', tasks, etc.
 
+Especially useful for multi-chain "chain-of-thought" processes.
+
 # Requirements
 For the moment, DV2 has only been tested on Ubuntu Linux 22.04.
 

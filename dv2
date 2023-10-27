@@ -454,7 +454,7 @@ main() {
         _elapsed_s="$(echo "scale=3; $(($(date +%s%N)-start_time)) / 1000000000" | bc)"
         _elapsed_s=${_elapsed_s:0:6}; [[ ${_elapsed_s: -1} == '.' ]] && _elapsed_s=${_elapsed_s:0:-1}
         _prompt+=" -- ${_elapsed_s}s"
-        echo >&2 -e "\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')"
+        echo >&2 -e "\x1b[38;5;240m\r${_prompt} $(head -c "$((COLUMNS - ${#_prompt} - 1))" < /dev/zero | tr '\0' '-')\x1b[0m"
         unset _prompt _elapsed_s
       fi
 
@@ -514,7 +514,7 @@ main() {
         case "$cmd" in
           quit|exit|q)
               if ((!exit_on_completion)) && ((change_flag && interactive)) && [[ ${cmd_args,,} != 'now' ]]; then
-                msg.info "$PRG: Session has not been saved."
+                msg.info "Session has not been saved."
                 read -r -n 1 -i y -p "$PRG: Save session? y/n "
                 echo
                 [[ "$REPLY" == 'y' ]] || return 0
@@ -700,6 +700,7 @@ main() {
               local -a _nums
               _nums=( $(int_list "$cmd_args" 0 "$(( (${#g_messages[@]}/3)-1 ))" 0) ) \
                   || { unset _nums; continue; }
+              ((${#_nums[@]} < 3)) && { unset _nums; continue; }
               local -i _i _ii
               (for _i in "${_nums[@]}"; do
                 _ii=(_i*3)
