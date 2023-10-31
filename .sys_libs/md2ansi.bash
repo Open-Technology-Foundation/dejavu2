@@ -1,36 +1,32 @@
 #!/bin/bash
 #shellcheck disable=SC2034
 set -e
-declare -- _ent_0=$(readlink -fn -- "$0") || _ent_0=''
-declare -- PRG=${_ent_0##*/}
-declare -- PRGDIR=${_ent_0%/*}
-declare -- version='0.4.20'
 
 md2ansi() {
+  # try to inherit current global COLUMNS
   declare -Ii COLUMNS
-  ((COLUMNS)) || COLUMNS=78
-
+  COLUMNS=${COLUMNS:-$(tput cols 2>/dev/null || echo '78')}
   # Borrow IFS
-  local -I IFS
+  declare -I IFS
   # ANSI Colour Palette
   local -- \
-    TEXT="\x1b[37;40;2m" \
+    TEXT="\x1b[38;5;7m" \
     CODE_BLOCK="\x1b[90m" \
     TABLE_BLOCK="\x1b[90m" \
-    HORIZONTAL_RULE="\x1b[36m" \
+    HR="\x1b[36m" \
     BLOCKQUOTE="\x1b[48;5;236m"
-  local -a ITALICS=(      "\x1b[2m" "\x1b[22m" ) # italics dim on-off
-  local -a BOLD=(         "\x1b[1m" "\x1b[22m" ) # bold on-off
-  local -a STRIKETHROUGH=("\x1b[9m" "\x1b[29m" ) # strikethrough on-off
-  local -a INLINE_CODE=(  "\x1b[2m" "\x1b[22m" ) # dim on-off
+  local -a ITALIC=( "\x1b[2m" "\x1b[22m" ) # italics dim on-off
+  local -a BOLD=(   "\x1b[1m" "\x1b[22m" ) # bold on-off
+  local -a STRIKE=( "\x1b[9m" "\x1b[29m" ) # strikethrough on-off
+  local -a CODE=(   "\x1b[2m" "\x1b[22m" ) # dim on-off
   local -- \
     LIST="\x1b[36m" \
-    H1="\x1b[31;1m" \
-    H2="\x1b[32;1m" \
-    H3="\x1b[33;1m" \
-    H4="\x1b[33m" \
-    H5="\x1b[34;1m" \
-    H6="\x1b[34m" \
+    H1="\x1b[38;5;226m" \
+    H2="\x1b[38;5;214m" \
+    H3="\x1b[38;5;118m" \
+    H4="\x1b[38;5;21m"   \
+    H5="\x1b[38;5;93m" \
+    H6="\x1b[38;5;239m"   \
     RESET="\x1b[0m"
   local -- line=''
   echo -en "$TEXT"
@@ -49,7 +45,6 @@ md2ansi() {
 
     # Tables ^[space]|space
     if [[ "$line" =~ ^([[:space:]]*)\|(.*) ]]; then
-#    if [[ $line  =~ ^[[:space:]]*\| ]]; then
       table_indent="${#BASH_REMATCH[1]}"
       local -a  _cols=()
       local -ai _max_widths=()
@@ -133,7 +128,7 @@ md2ansi() {
 
     # Horizontal_Rules ^--- ^=== ^___
     if [[ ${line:0:3} == '---' ||  ${line:0:3} == '==='  ||  ${line:0:3} == '___' ]]; then
-      echo -e "\r$(head -c "$((${COLUMNS:-78} - 1))" < /dev/zero | tr '\0' "${line:0:1}")"
+      echo -e "\r${HR}$(head -c "$((${COLUMNS:-78} - 1))" < /dev/zero | tr '\0' "${line:0:1}")$RESET"
       continue
     fi
 
@@ -155,10 +150,10 @@ md2ansi() {
     line=$(echo "$line" | sed -E "s/\*\*(.*?)\*\*/${BOLD[0]}\1${BOLD[1]}/g")
 
     # Italics *
-    line=$(echo "$line" | sed -E "s/\*(.*?)\*/${ITALICS[0]}\1${ITALICS[1]}/g")
+    line=$(echo "$line" | sed -E "s/\*(.*?)\*/${ITALIC[0]}\1${ITALIC[1]}/g")
 
     # Strikethrough ~~
-    line=$(echo "$line" | sed -E "s/\~\~(.*?)\~\~/${STRIKETHROUGH[0]}\1${STRIKETHROUGH[1]}/g")
+    line=$(echo "$line" | sed -E "s/\~\~(.*?)\~\~/${STRIKE[0]}\1${STRIKE[1]}/g")
 
     # Inline_Code `(.*?)`
     line=$(transform_line "$line")
@@ -199,7 +194,7 @@ transform_line() {
     new_line+="$segment"
     line="${line#*\`}"
     segment="${line%%\`*}"
-    new_line+="${INLINE_CODE[0]}${segment}${INLINE_CODE[1]}"
+    new_line+="${CODE[0]}${segment}${CODE[1]}"
     line="${line#*\`}"
   done
   new_line+="$line"
@@ -245,8 +240,11 @@ trim() {
 }
 declare -fx trim
 
-# In script.sh
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then #=====================================
+declare -- _ent_0=$(readlink -fn -- "$0") || _ent_0=''
+declare -- PRG=${_ent_0##*/}
+declare -- PRGDIR=${_ent_0%/*}
+declare -- version='0.4.20'
 _main() {
   usage() {
   cat <<EOT
