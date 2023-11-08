@@ -3,7 +3,7 @@
 set -e
 shopt -s extglob globstar checkwinsize
 
-declare -ar PRGNAME=( DéjàVu-DéjàVu DéjàVu2 DV2 dv2 )
+declare -ar PRGNAME=( DéjàVu2 DV2 dv2 )
 
 declare -- AUTHOR='Gary Dean, garydean@okusi.id'
 declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
@@ -12,9 +12,12 @@ declare -- PRG0;    PRG0=$(readlink -en -- "$0")
 declare -- PRGDIR;  PRGDIR=$(dirname "$PRG0")
 declare -- PRG;     PRG=$(basename "$PRG0")
 
+declare -x _TIMESTAMP=$(date +'%F %T %z %Z')
+
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
-declare -- mdless=$(command -v mdless || true)
+declare -- mdless=''
+#declare -- mdless=$(command -v mdless || true)
 declare -- version="$(head -qzn1 "$PRGDIR"/.version)"
 
 # basic application functions --------------------------------------------------
@@ -436,10 +439,11 @@ main() {
 
   # main loop =========================================================
   # Get the start time in seconds and nanoseconds since the Unix epoch
-  local -- start_time="$(date +%s%N)"
+  local -i start_time="$(date +%s%N)"
   local -- cmd_type='/'
   while((1)); do
     used_tokens=$((g_messages_len / 4))
+    _TIMESTAMP=$(date -d "@${start_time:0:10}" +'%F %T %z %Z')
     while((1)); do
       # -- line off--------------------------------------------
       if ((verbose && statusline)); then
@@ -486,6 +490,8 @@ main() {
           break
         done
         start_time="$(date +%s%N)"
+        _TIMESTAMP=$(date -d "@${start_time:0:10}" +'%F %T %z %Z')
+
         # Is it a DV2 /command?
         if [[ ${content:0:1} == '/' ]]; then
           cmd_type='/'
@@ -1097,7 +1103,7 @@ token_limit=$(context_window "$model")
 usage() {
 #shellcheck disable=SC2128
 cat <<EOT
-# ${PRGNAME} - AI Chatbot/Scriptbot for Bash terminal - ver $version
+# $PRGNAME - AI Chatbot/Scriptbot for Bash terminal - ver $version
 
 __"it's dejavu all over again."__
 
@@ -1133,7 +1139,7 @@ AI Agent creation and scripting for Bash terminal using openAI GPT models.
             eg, -g user "How did I get here?"
 
   -c|--command|--cmd "[/]cmd"
-            Add ${PRGNAME[2]} /slash command _or_ gpt user prompt to command
+            Add ${PRGNAME[-1]} /slash command _or_ gpt user prompt to command
             stack (Cmd_Cache[]).
             Can be used multiple times.
 
@@ -1171,10 +1177,10 @@ AI Agent creation and scripting for Bash terminal using openAI GPT models.
 
   -a|--autosave on|off
             If on, upon exit, append current conversation to current
-            ${PRGNAME[2]} script. Default is off.
+            ${PRGNAME[-1]} script. Default is off.
 
   -u|--upgrade
-             Upgrade ${PRGNAME[1]} from git repository.
+             Upgrade $PRGNAME from git repository.
              Git repository is set to:
                 $URL
 
