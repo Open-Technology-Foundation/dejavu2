@@ -16,9 +16,10 @@ declare -- REPOSITORY='https://github.com/Open-Technology-Foundation/dejavu2.git
 
 declare -i doApt=1 doUpgrade=0
 
-dejavu2_help() {
+dv2.install.help() {
 cat <<-EOT
   Name    : $PRGNAME vs $Version Installation
+          :
   Script  : $PRG
           :
   Desc    : Installation Script for $PRGNAME GPT Terminal Chatbot/Scriptbot
@@ -34,6 +35,7 @@ cat <<-EOT
           :   in /usr/local/bin, if this does not already exist.
           : 
   Synopsis: $PRG [-vqaVh]
+          :
   Options : -v|--verbose   Verbose on (default)
           : -q|--quiet     Verbose off. 
           :                If environment key OPENAI_API_KEY
@@ -51,11 +53,11 @@ cat <<-EOT
 EOT
 }
 
-main() {
+dv2.install() {
   if ((UID)); then
     if [[ " $(id -Gn) " != *" sudo "* ]]; then
       echo 2> "Installation of $PRGNAME requires root access."
-      dejavu2_help
+      dv2.install.help
       exit
     fi
   fi
@@ -70,7 +72,7 @@ main() {
     -v|--verbose)   verbose_=1; quiet_='' ;;
     -q|--quiet)     verbose_=0; quiet_='qq' ;;
     -V|--version)   echo "$PRGNAME vs $Version"; return 0 ;;
-    -h|--help)      dejavu2_help; return 0 ;;
+    -h|--help)      dv2.install.help; return 0 ;;
     -N|--no-op)     ;;
     -[uavqVhN]*)    #shellcheck disable=SC2046 # de-aggregate aggregated short options
                     set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}";;
@@ -183,5 +185,6 @@ main() {
   fi
 }
 
-main "$@"
+dv2.install "$@"
+
 #fin

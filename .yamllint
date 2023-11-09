@@ -1,0 +1,7 @@
+extends: default
+
+rules:
+  line-length:
+    max: 120 # Or whatever maximum you prefer; set to ignore to disable
+    allow-non-breakable-inline-mappings: true # Allow longer lines for mappings
+  new-line-at-end-of-file: disable

@@ -12,7 +12,12 @@ declare -- PRG0;    PRG0=$(readlink -en -- "$0")
 declare -- PRGDIR;  PRGDIR=$(dirname "$PRG0")
 declare -- PRG;     PRG=$(basename "$PRG0")
 
-declare -x _TIMESTAMP=$(date +'%F %T %z %Z')
+declare -x _TIMESTAMP=$(date +'%F_%T_%z_%Z %F %T %z %Z %A')
+declare -nx _DATE=_TIMESTAMP[1]
+declare -nx _TIME=_TIMESTAMP[2]
+declare -nx _TZ=_TIMESTAMP[3]
+declare -nx _TZ_code=_TIMESTAMP[4]
+declare -nx _DAY=_TIMESTAMP[5]
 
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
@@ -443,7 +448,7 @@ main() {
   local -- cmd_type='/'
   while((1)); do
     used_tokens=$((g_messages_len / 4))
-    _TIMESTAMP=$(date -d "@${start_time:0:10}" +'%F %T %z %Z')
+    _TIMESTAMP=( $(date +'%F_%T_%z_%Z %F %T %z %Z %A') )
     while((1)); do
       # -- line off--------------------------------------------
       if ((verbose && statusline)); then
@@ -490,7 +495,7 @@ main() {
           break
         done
         start_time="$(date +%s%N)"
-        _TIMESTAMP=$(date -d "@${start_time:0:10}" +'%F %T %z %Z')
+        _TIMESTAMP=( $(date +'%F_%T_%z_%Z %F %T %z %Z %A') )
 
         # Is it a DV2 /command?
         if [[ ${content:0:1} == '/' ]]; then

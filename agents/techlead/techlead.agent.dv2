@@ -13,6 +13,7 @@ temperature=0.072973525693001
 
 interactive=1
 verbose=1
+markdown=1
 
 languages=( English Indonesian )
 language=English
@@ -77,12 +78,13 @@ User's name is \${user}.
   - Always use 24-hour time.
   - Dates should generally use YYYY-MM-DD format.
 
-    TimeStamp=\$_TIMESTAMP
+    TimeStamp: \$_TIMESTAMP
 
-    TodaysDate=\${_TIMESTAMP:0:10}
+    TodaysDate: \$_DATE
 
-    TimeNow=\${_TIMESTAMP:10:8}
+    TimeNow: \$_TIME
 
+  Today is \$_DAY.
 
 ---
 
