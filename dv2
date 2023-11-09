@@ -1,6 +1,6 @@
 #!/bin/bash
 #shellcheck disable=SC2155,SC2034,SC2174,SC1090,SC1091
-set -eu
+set -euo pipefail
 shopt -s extglob globstar checkwinsize
 
 declare -ar PRGNAME=( DéjàVu2 DV2 dv2 )
