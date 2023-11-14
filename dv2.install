@@ -4,7 +4,7 @@
 # Linux terminal interface for OpenAI GPTs
 # Gary Dean garydean@yatti.id
 # https://github.com/Open-Technology-Foundation/dejavu2
-set -e
+set -euo pipefail
 declare -- _ent_0=$(readlink -fn -- "$0") || _ent_0=''
 declare -- PRG=${_ent_0##*/}
 declare -- PRGDIR=${_ent_0%/*}
@@ -177,9 +177,7 @@ dv2.install() {
 		echo
     echo "To run $PRGNAME, enter 'dv2' or 'dejavu2'"
 		echo
-    echo "Do you want to help develop and improve $PRGNAME?"
-    echo "Contribute here:"
-    echo
+    echo "Contribute: Help develop and improve $PRGNAME."
     echo "  $REPOSITORY"
 		echo
   fi

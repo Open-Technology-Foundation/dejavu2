@@ -1019,7 +1019,7 @@ main() {
     eval "_PD_expanded=\"${primary_directive}\""
     # Print the expanded directive
     #echo "$directive_expanded"
-    content=$($openai api chat_completions.create \
+    content=$($openai api chat.completions.create \
         --model        "$model" \
         --n            "$n" \
         --max-tokens   "$max_tokens" \
@@ -1091,7 +1091,7 @@ get_openai_models() {
   #shellcheck disable=SC2207
   if ((_force)); then
     ((verbose)) && msg.info "Updating openAI engines list"
-    Models=( $($openai api engines.list \
+    Models=( $($openai api models.list \
               |grep '"id":' |sed 's/"id"://; s/",//' \
               |tr -d '" ' | grep ^gpt- |sort -u) ) \
       && printf '%s\n' "${Models[@]}" >"$_engines_file"
