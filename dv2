@@ -1078,7 +1078,7 @@ dv_shell() {
 
 
 # Models ---------------------------------------------------------------------------
-declare -a Models=()
+declare -ax Models=()
 get_openai_models() {
   local -i _force=${1:-0}
   local -- _engines_file="${DV2_USER_HOME:-"$PRGDIR"}"/openai.engines.list
@@ -1091,10 +1091,14 @@ get_openai_models() {
   #shellcheck disable=SC2207
   if ((_force)); then
     ((verbose)) && msg.info "Updating openAI engines list"
+#    Models=( $($openai api models.list \
+#              |grep '"id":' |sed 's/"id"://; s/",//' \
+#              |tr -d '" ' | grep ^gpt- |sort -u) ) \
+#      && printf '%s\n' "${Models[@]}" >"$_engines_file"
     Models=( $($openai api models.list \
-              |grep '"id":' |sed 's/"id"://; s/",//' \
-              |tr -d '" ' | grep ^gpt- |sort -u) ) \
+                |grep -oP '"id": "\Kgpt-[^\"]+' |sort -u) )\
       && printf '%s\n' "${Models[@]}" >"$_engines_file"
+
   else
     Models=( $(cat -s "$_engines_file") )
   fi
@@ -1106,15 +1110,40 @@ get_openai_models 0
 # returns 'token_limit' for 'model'
 # if no model specified, or if the model is unknown,
 # then return token limit of 2000.
+# openai api models.list |grep -oP '"id": "\Kgpt-[^\"]+' |sort
+declare -Aix Models_context=(
+  [gpt-3.5-turbo]=4096
+  [gpt-3.5-turbo-0301]=4096
+  [gpt-3.5-turbo-0613]=4096
+  [gpt-3.5-turbo-1106]=4096
+  [gpt-3.5-turbo-16k]=16384
+  [gpt-3.5-turbo-16k-0613]=16384
+  [gpt-3.5-turbo-instruct]=4096
+  [gpt-3.5-turbo-instruct-0914]=4096
+  [gpt-4]=8192
+  [gpt-4-0314]=8192
+  [gpt-4-0613]=8192
+  [gpt-4-1106-preview]=4096
+  [gpt-4-vision-preview]=4096
+)
 context_window() {
   local -i _k=2000
   # If no model
   (($#)) || { echo -n "$_k"; return 0; }
-  [[ "$1" =~ ^gpt-.*-([0-9]+)k ]] \
-    && { echo -n "${BASH_REMATCH[1]}000"; return 0; }
+  # if the model is known...
+  [[ -v Models_context[$1] ]] && {
+    echo -n ${Models_context[$1]}
+    return 0
+  }
+  # if model name contains [0-9]+k
+  [[ "$1" =~ ^gpt-.*-([0-9]+)k ]] && \
+    { echo -n "${BASH_REMATCH[1]}000"; return 0; }
   local -a _arr=()
+  # split the model name up on -
   readarray -t -d '-' _arr <<<"$1"
+  # if nothing found then not in standard format
   ((${#_arr[@]})) || { echo -n "$_k"; return 0; }
+  # get rid of the  last \n element
   _arr[-1]="${_arr[-1]%$'\n'}"
   if    [[ "${_arr[0]}-${_arr[1]}-${_arr[3]}" == 'gpt-4-preview' ]]; then
     _k=4096
