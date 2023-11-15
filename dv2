@@ -1081,26 +1081,21 @@ dv_shell() {
 declare -ax Models=()
 get_openai_models() {
   local -i _force=${1:-0}
-  local -- _engines_file="${DV2_USER_HOME:-"$PRGDIR"}"/openai.engines.list
-  if [[ ! -f "$_engines_file" ]]; then
+  local -- _models_list="${DV2_USER_HOME:-"$PRGDIR"}"/openai.models.list
+  if [[ ! -f "$_models_list" ]]; then
     _force=1
   else
     # Force update if more than 5 days old.
-    (( ($(stat --printf='%Y' "$_engines_file") + 432000) < "$(date +%s)" )) && _force=1
+    (( ($(stat --printf='%Y' "$_models_list") + 432000) < "$(date +%s)" )) && _force=1
   fi
   #shellcheck disable=SC2207
   if ((_force)); then
-    ((verbose)) && msg.info "Updating openAI engines list"
-#    Models=( $($openai api models.list \
-#              |grep '"id":' |sed 's/"id"://; s/",//' \
-#              |tr -d '" ' | grep ^gpt- |sort -u) ) \
-#      && printf '%s\n' "${Models[@]}" >"$_engines_file"
+    ((verbose)) && msg.info "Updating openAI models list"
     Models=( $($openai api models.list \
                 |grep -oP '"id": "\Kgpt-[^\"]+' |sort -u) )\
-      && printf '%s\n' "${Models[@]}" >"$_engines_file"
-
+      && printf '%s\n' "${Models[@]}" >"$_models_list"
   else
-    Models=( $(cat -s "$_engines_file") )
+    Models=( $(cat -s "$_models_list") )
   fi
 }
 get_openai_models 0
