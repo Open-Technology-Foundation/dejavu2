@@ -9,8 +9,8 @@ declare -- AUTHOR='Gary Dean, garydean@okusi.id'
 declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
 
 declare -- PRG0;    PRG0=$(readlink -en -- "$0")
-declare -- PRGDIR;  PRGDIR=$(dirname "$PRG0")
-declare -- PRG;     PRG=$(basename "$PRG0")
+declare -- PRGDIR;  PRGDIR="${PRG0%/*}"
+declare -- PRG;     PRG="${PRG0##*/}"
 
 declare -x _TIMESTAMP=$(date +'%F_%T_%z_%Z %F %T %z %Z %A')
 declare -nx _DATE=_TIMESTAMP[1]
@@ -792,7 +792,8 @@ main() {
               local -a _newfiles=( ".." )
               for _dir in "${_files[@]}"; do
                 if [[ -f "$_dir" ]]; then
-                  _newdir="$(dirname -- "$_dir")"
+                  _newdir=${_dir%/*}
+                  #_newdir="$ (dirname -- "$_dir")"
                   [[ _olddir != "$_newdir" ]] \
                     && {
                       _olddir=$_newdir
@@ -834,7 +835,8 @@ main() {
                 #shellcheck disable=SC2015
                 if [[ $reply == 'c' ]]; then
                   [[ ! -d "$_selected" ]] \
-                    && _selected="$(dirname -- "$_selected")"
+                    && _selected="$${_selected%/*}"
+#                    && _selected="$ (dirname -- "$_selected")"
                   cd "$_selected" || true
                   continue
                 elif [[ $reply == 'l' ]]; then
@@ -881,7 +883,7 @@ main() {
                 for _dir in "${_files[@]}"; do
                   echo "$((++_ccc)) $_dir"
                 done
-                read -rp "$PRG: $(basename "$EDITOR") 0|1-${#_files[@]} " _sel
+                read -rp "$PRG: ${EDITOR##*/} 0|1-${#_files[@]} " _sel
                 ( [[ -z "$_sel" || $_sel == 'q' ]] \
                     || (( _sel == 0 || _sel > ${#_files[@]} ))
                 ) && break
@@ -911,9 +913,9 @@ main() {
               #shellcheck disable=SC2094
               ( echo '#!/bin/bash'
                 echo
-                echo "# Agent '$(basename "$_filename")'"
+                echo "# Agent '${_filename##*/}'"
                 echo "# Generated from $PRG session "
-                echo "# with Agent '$(basename -- "$Agent_File")'"
+                echo "# with Agent '${Agent_File##*/}'"
                 echo "# $(date +'%F %T %z')"
                 echo
                 declarep 2 system

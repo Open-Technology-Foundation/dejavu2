@@ -1,0 +1,20 @@
+# dharma_sb.dv2
+#/statusline=0
+#/interactive=0
+#/verbose=0
+#/exit_on_completion=1
+#/on_error=exit
+#/load /ai/scripts/dv2/agents/dharma/dharma.dv2.agent
+What is your name, and what is your role?
+
+Who am I?
+
+Please provide me with a comprehensive biography of Stephen Batchelor.
+
+What contribution has Stephen Batchelor made to the discourse on secular dharma, or a secularised dharma?
+
+how can civil discourses be generated within societies that are in tune with dharmic perpectives as expressed by Stephen Batchelor and many others?
+
+For those of us dharmics who have dedicated part or a whole of their lives to propogating dharmic values and practices, what can we do to build upon the work of Stephen Batchelor and others?
+
+#fin
