@@ -177,11 +177,11 @@ dv2.install() {
     
   if ((verbose_)); then
     echo
-    echo "$PRGNAME is installed."
+    echo "$PRGNAME has been installed."
 		echo
-    echo "To run $PRGNAME, enter 'dv2' or 'dejavu2'"
+    echo "To run, enter 'dv2' or 'dejavu2'"
 		echo
-    echo "Contribute! Help develop and improve $PRGNAME."
+    echo "Contribute! Develop and improve $PRGNAME."
     echo " -> $REPOSITORY"
 		echo
   fi
