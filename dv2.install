@@ -5,18 +5,20 @@
 # Gary Dean garydean@yatti.id
 # https://github.com/Open-Technology-Foundation/dejavu2
 set -euo pipefail
-#shellcheck disable=SC2155
-declare -- PRG0=$(readlink -fn -- "$0")
-declare -- PRG=${PRG0##*/} \
-           PRGDIR=${PRG0%/*}
+shopt -s extglob globstar checkwinsize
+declare -r PRGNAME='DéjàVu2'
+declare -r AUTHOR='Gary Dean, garydean@okusi.id'
+declare -r REPOSITORY="https://github.com/Open-Technology-Foundation/dejavu2.git"
+declare -r PRG0=$(readlink -en -- "$0")
+declare -r PRGDIR="${PRG0%/*}"
+declare -r PRG="${PRG0##*/}"
+((EUID)) && { >&2 echo "$PRG requires root."; exit 1; }
+
 declare -- PRGSHAREDIR=/usr/share/${PRG%.install}
 #shellcheck disable=SC2155
 declare -- Version=$(cat "$PRGDIR/.version")
 #shellcheck disable=SC2034
-declare -- PRGVER="$PRG $Version" \
-           PRGNAME="DéjàVu2"
-
-declare -- REPOSITORY='https://github.com/Open-Technology-Foundation/dejavu2.git'
+declare -- PRGVER="$PRG $Version"
 
 declare -i doApt=1 doUpgrade=0
 

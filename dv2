@@ -1,23 +1,96 @@
 #!/bin/bash
 #shellcheck disable=SC2155,SC2034,SC2174,SC1090,SC1091
+#command help starts here (warning: each line is eval'ed; escape \".):
+# $PRGNAME - GPT Chatbot/Scriptbot for Bash terminal
+#
+# Version: $version
+#
+# \"it's dejavu all over again.\"
+#
+# AI Agent creation and scripting for Bash terminal using openAI GPT models.
+#
+# Usage:
+#   $PRG [agent] [-options] [<file]
+#
+# Arguments:
+#   agent
+#       Agent file (with '.agent.$PRG' filename extension).
+#       Optional, Positional; must be first argument,
+#       before any other options.
+#   file
+#       A .script.$PRG file, via stdin.
+#
+# Options:
+#   -m|--model \"model\"
+#       openai [model=$model]
+#   -k|--token_limit N
+#       context window [token limit=$token_limit]
+#       Usually calculated automatically (see --auto-max-tokens).
+#   -M|--max_tokens N
+#       response tokens [max_tokens=$max_tokens]
+#       Usually calculated automatically (see --auto-max-tokens).
+#   -t|--temperature N.N
+#       [temperature=$temperature]
+#   -g|--message system|user|assistant \"content...\"
+#       eg, -g user \"How did I get here?\"
+#   -c|--command|--cmd \"[/]cmd\"
+#       Add ${PRGNAME[-1]} /slash command _or_ gpt user prompt to command
+#       stack (Cmd_Cache[]).
+#       Can be used multiple times.
+#   -L|--languages \"lang1,lang2,...\"
+#       [languages='${languages[*]}']
+#   -x|--exit_on_completion|--exit
+#       Exit upon completion of commands/script.
+#       [exit_on_completion='$exit_on_completion']
+#   -v|--verbose
+#       verbose=1 [verbose=$verbose]
+#   -q|--quiet
+#       verbose=0
+#   -N|--statusline
+#       statusline=0 [statusline=$statusline]
+#   -i|--interactive
+#       interactive=1 [interactive=$interactive]
+#       yes-no prompts are enabled.
+#   -y|--not-interactive
+#       interactive=0
+#       yes-no prompts are disabled; default y.
+#   -a|--auto-max-tokens
+#       auto_max_tokens=1 [auto_max_tokens=$auto_max_tokens]
+#       Enable dynamic calculation of max_tokens to
+#       maximum available.
+#   -A|--no-auto-max-tokens
+#       auto_max_tokens=0
+#       Disable dynamic calculation of max_tokens.
+#   -a|--autosave on|off
+#       If on, upon exit, append current conversation to current
+#       ${PRGNAME[-1]} script. Default is off.
+#   -u|--upgrade
+#       Upgrade $PRGNAME from git repository.
+#       Git repository is set to:
+#       $REPOSITORY
+#   -V|--version
+#       [version=\"$PRGVER\"], exit
+#   -h|--help
+#       This help, exit
+#
+#help ends here (see read_bash_help())
 set -euo pipefail
 shopt -s extglob globstar checkwinsize
-
 declare -ar PRGNAME=( DéjàVu2 DV2 dv2 )
-
-declare -- AUTHOR='Gary Dean, garydean@okusi.id'
-declare -- URL='https://github.com/Open-Technology-Foundation/dejavu2'
-
-declare -- PRG0;    PRG0=$(readlink -en -- "$0")
-declare -- PRGDIR;  PRGDIR="${PRG0%/*}"
-declare -- PRG;     PRG="${PRG0##*/}"
+declare -r AUTHOR='Gary Dean, garydean@okusi.id'
+declare -r REPOSITORY="https://github.com/Open-Technology-Foundation/dejavu2.git"
+declare -- PRG0=$(readlink -en -- "$0")
+declare -- PRGDIR="${PRG0%/*}"
+declare -- PRG="${PRG0##*/}"
+((EUID)) && { >&2 echo "$PRGNAME requires root."; exit 1; }
+declare -- version="$(head -qzn1 "$PRGDIR"/.version)"
 
 declare -x _TIMESTAMP=$(date +'%F_%T_%z_%Z %F %T %z %Z %A')
-declare -nx _DATE=_TIMESTAMP[1]
-declare -nx _TIME=_TIMESTAMP[2]
-declare -nx _TZ=_TIMESTAMP[3]
-declare -nx _TZ_code=_TIMESTAMP[4]
-declare -nx _DAY=_TIMESTAMP[5]
+declare -nx _DATE=_TIMESTAMP[1]     \
+            _TIME=_TIMESTAMP[2]     \
+            _TZ=_TIMESTAMP[3]       \
+            _TZ_code=_TIMESTAMP[4]  \
+            _DAY=_TIMESTAMP[5]
 
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
@@ -338,23 +411,54 @@ set +e
 ##       are handled by trap_error().
 # -- end on_error --------------------------------------------------
 
+# help self-text reader
+read_bash_help() {
+  local -- ln
+  while IFS= read -r ln; do
+    [[ ${ln:0:1} == '#' ]] || return 0
+    [[ $ln == '#' ]] && { echo; continue; }
+    [[ ${ln:0:2} == '# ' ]] || continue
+    [[ $ln == *'shellcheck'* ]] && continue
+    eval "echo \"${ln:2}\""
+  done <"$PRG0"
+  return 1
+}
+# Help
+#[[ " $* " == *' -h '* || " $* " == *' --help '* ]] && read_bash_help
+
 set_readline_history_file
 
 #===================================================================
 main() {
-  local arg1=''
+  local arg1='' arg_name arg_value
   # Process command line arguments and options
   while(($#)); do
     # var=value arguments
-    if [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
-      arg1="${1%=*}"
-      arg1=${arg1//-/_}
-      [[ -z "$(_declarep "$arg1")" ]] \
+    if [[ "$1" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)=(.*)$ ]]; then
+      arg_name="${BASH_REMATCH[1]}"
+      arg_value="${BASH_REMATCH[2]}"
+      # Replace hyphens with underscores in variable name
+      arg_name=${arg_name//-/_}
+      # Validation check
+      [[ -z "$(_declarep "$arg_name")" ]] \
           && { msg.err "Invalid variable declaration '$1'"; return 1; }
-      eval "$1" || return 1
+      # Assign value to the variable safely
+      declare "$arg_name=$arg_value" || return 1
       shift
       continue
     fi
+
+#    # var=value arguments
+#    if [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+#      arg1="${1%=*}"
+#      arg1=${arg1//-/_}
+#      [[ -z "$(_declarep "$arg1")" ]] \
+#          && { msg.err "Invalid variable declaration '$1'"; return 1; }
+#      eval "$1" || return 1
+#      shift
+#      continue
+#    fi
+
     #shellcheck disable=SC2206
     case "$1" in
       -m|--model)
@@ -419,7 +523,7 @@ main() {
                 echo "$PRGVER"; return 0
                 ;;
       -h|--help)
-                usage; return 0
+                read_bash_help; return 0
                 ;;
       -[mtgkMcxLlwvqiyaANVh]*) #shellcheck disable=SC2046 # de-aggregate aggregated short options
                 set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
@@ -1108,7 +1212,7 @@ get_openai_models 0
 # if no model specified, or if the model is unknown,
 # then return token limit of 2000.
 # openai api models.list |grep -oP '"id": "\Kgpt-[^\"]+' |sort
-declare -Aix Models_context=(
+declare -Aixr Models_context=(
   [gpt-3.5-turbo]=4096
   [gpt-3.5-turbo-0301]=4096
   [gpt-3.5-turbo-0613]=4096
@@ -1150,99 +1254,6 @@ context_window() {
   echo -n "$_k"
 }
 token_limit=$(context_window "$model")
-
-# Help ------------------------------------------------------------
-usage() {
-#shellcheck disable=SC2128
-cat <<EOT
-# $PRGNAME - AI Chatbot/Scriptbot for Bash terminal - ver $version
-
-__"it's dejavu all over again."__
-
-AI Agent creation and scripting for Bash terminal using openAI GPT models.
-
-## Usage
-
-  $PRG [agent] [-options] [<file]
-
-  agent     Agent file (with '.agent.$PRG' filename extension).
-            Optional, Positional; must be first argument,
-            before any other options.
-
-  file      .script.$PRG file, via stdin.
-
-## Options
-
-  -m|--model "model"
-            openai [model=$model]
-
-  -k|--token_limit N
-            context window [token limit=$token_limit]
-            Usually calculated automatically (see --auto-max-tokens).
-
-  -M|--max_tokens N
-            response tokens [max_tokens=$max_tokens]
-            Usually calculated automatically (see --auto-max-tokens).
-
-  -t|--temperature N.N
-            [temperature=$temperature]
-
-  -g|--message system|user|assistant "content..."
-            eg, -g user "How did I get here?"
-
-  -c|--command|--cmd "[/]cmd"
-            Add ${PRGNAME[-1]} /slash command _or_ gpt user prompt to command
-            stack (Cmd_Cache[]).
-            Can be used multiple times.
-
-  -L|--languages "lang1,lang2,..."
-            [languages='${languages[*]}']
-
-  -x|--exit_on_completion|--exit
-            Exit upon completion of commands/script.
-            [exit_on_completion='$exit_on_completion']
-
-  -v|--verbose
-            verbose=1 [verbose=$verbose]
-  -q|--quiet
-            verbose=0
-
-  -N|--statusline
-            statusline=0 [statusline=$statusline]
-
-  -i|--interactive
-            interactive=1 [interactive=$interactive]
-            yes-no prompts are enabled.
-
-  -y|--not-interactive
-            interactive=0
-            yes-no prompts are disabled; default y.
-
-  -a|--auto-max-tokens
-            auto_max_tokens=1 [auto_max_tokens=$auto_max_tokens]
-            Enable dynamic calculation of max_tokens to
-            maximum available.
-
-  -A|--no-auto-max-tokens
-            auto_max_tokens=0
-            Disable dynamic calculation of max_tokens.
-
-  -a|--autosave on|off
-            If on, upon exit, append current conversation to current
-            ${PRGNAME[-1]} script. Default is off.
-
-  -u|--upgrade
-             Upgrade $PRGNAME from git repository.
-             Git repository is set to:
-                $URL
-
-  -V|--version
-            [version="$PRGVER"], exit
-
-  -h|--help
-            This help, exit
-EOT
-}
 
 # -- Script Command Help Text ---------------------------------------------------
 declare -- Script_Command_Help=''
