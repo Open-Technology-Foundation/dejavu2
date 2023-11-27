@@ -1,6 +1,13 @@
 #!/bin/bash
 #shellcheck disable=SC2034
-set -e
+# Script  : $PRG vs $version
+# Desc    : Print formatted ANSI output to terminal from Markdown file.md.
+# Synopsis: $PRG [file.md [...]] [< md_input_stream]
+# Examples: $PRG < README.md
+#         : $PRG < *.md
+#         : $PRG file1.md
+#         : $PRG file1.md file2.md file3.md <file4.md
+#
 
 md2ansi() {
   # try to inherit current global COLUMNS
@@ -241,9 +248,11 @@ trim() {
 declare -fx trim
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then #=====================================
-declare -- _ent_0=$(readlink -fn -- "$0") || _ent_0=''
-declare -- PRG=${_ent_0##*/}
-declare -- PRGDIR=${_ent_0%/*}
+set -euo pipefail
+declare -- PRG0
+PRG0=$(readlink -fn -- "$0")
+declare -- PRG=${PRG0##*/}
+declare -- PRGDIR=${PRG0%/*}
 declare -- version='0.4.20'
 _main() {
   usage() {
