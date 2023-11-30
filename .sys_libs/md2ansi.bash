@@ -1,13 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #shellcheck disable=SC2034
-# Script  : $PRG vs $version
-# Desc    : Print formatted ANSI output to terminal from Markdown file.md.
+# Script  : $PRGNAME $VERSION
+# Desc    : Print formatted ANSI output to terminal from Markdown file or stream.
 # Synopsis: $PRG [file.md [...]] [< md_input_stream]
 # Examples: $PRG < README.md
 #         : $PRG < *.md
 #         : $PRG file1.md
 #         : $PRG file1.md file2.md file3.md <file4.md
-#
 
 md2ansi() {
   # try to inherit current global COLUMNS
@@ -208,6 +207,19 @@ transform_line() {
   echo -ne "$new_line"
 }
 
+# bash_docstring.lite
+usage() {
+  [[ $0 == 'bash' ]] && return 0
+  while IFS= read -r line; do
+    line=${line#"${line%%[![:space:]]*}"}
+    [[ -z "$line" ]] && continue
+    [[ ${line:0:1} == '#' ]] || break
+    [[ $line == '#' ]] && { echo; continue; }
+    [[ ${line:0:2} == '# '  || ${line:0:2} == '#@' ]] && eval "echo \"${line:2}\""
+  done <"$0"
+  return 0
+}
+
 center_text() {
   local -i w=$1; shift
   local -- text
@@ -247,43 +259,65 @@ trim() {
 }
 declare -fx trim
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then #=====================================
-set -euo pipefail
-declare -- PRG0
-PRG0=$(readlink -fn -- "$0")
-declare -- PRG=${PRG0##*/}
-declare -- PRGDIR=${PRG0%/*}
-declare -- version='0.4.20'
-_main() {
-  usage() {
-  cat <<EOT
-Script  : $PRG vs $version
-Desc    : Print formatted ANSI output to terminal from Markdown file.md.
-Synopsis: $PRG [file.md [...]] [< md_input_stream]
-Examples: $PRG < README.md
-        : $PRG < *.md
-        : $PRG file1.md
-        : $PRG file1.md file2.md file3.md <file4.md
-EOT
-  }
-  local -a args=()
+# run as command
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then #=====================================
+  set -euo pipefail
+  declare -- PRG0; PRG0=$(readlink -fn -- "$0")
+  declare -- PRG="${PRG0##*/}" PRGDIR="${PRG0%/*}"
+
+  # Provenence Globals for scripts
+  declare -r  PRGNAME="$PRG" \
+              VERSION='0.4.20(3)' \
+              UPDATED='2023-11-30' \
+              AUTHOR='Gary Dean' \
+              ORGANISATION='Open Technology Foundation' \
+              LICENSE='GPL3' \
+              DESCRIPTION='Print formatted ANSI output to terminal from Markdown file or stream.' \
+              DEPENDENCIES='Bash >= 5'
+  declare -r  USAGE="$PRGNAME [-VhD] [file.md [...]] [< md_input_stream]" \
+              REPOSITORY="https://github.com/Open-Technology-Foundation/${PRGNAME}"
+  declare -n  ORGANIZATION=ORGANISATION AUTHORS=AUTHOR LICENCE=LICENSE
+
+  # Argument processing =============================================
+  declare -a args=()
   while(($#)); do case "$1" in
-    -V|--version) echo "$PRG $version"; return 0 ;;
-    -h|--help)    usage; return 0 ;;
-    -?|--*)       >&2 echo "$PRG: Invalid option '$1'"; exit 22 ;;
-    *)            args+=( "$1" ) ;;
+    -V|--version)
+        echo "$PRGNAME $VERSION"
+        exit 0
+        ;;
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    #canonical DEBUG assertion
+    -D|--debug)
+        declare -ix DEBUG; DEBUG+=1
+        declare -x PS4='+ $LINENO '
+        declare -p PRGNAME VERSION UPDATED AUTHOR ORGANISATION LICENSE DESCRIPTION DEPENDENCIES USAGE REPOSITORY |cut -d' ' -f3-
+        set -vx
+        ;;
+    -[VhD]*) #shellcheck disable=SC2046 # de-aggregate aggregated short options
+        set -- '' $(printf -- "-%c " $(grep -o . <<<"${1:1}")) "${@:2}"
+        ;;
+    -?|--*)
+        >&2 echo "$PRG: error: Invalid option '$1'";
+        exit 22
+        ;;
+    *)  args+=( "$1" )
+        ;;
   esac; shift; done
   if ((${#args[@]})); then
-    local -- mdfile md=''
+    declare -- mdfile md=''
     for mdfile in "${args[@]}"; do
-      [[ -f "$mdfile" ]] || { >&2 echo "$PRG: File '$mdfile' not found"; exit 1 ; }
+      [[ -f "$mdfile" ]] || { >&2 echo "$PRG: error: File '$mdfile' not found"; exit 1 ; }
       md+=$(cat -s -- "$mdfile"; echo)
     done
+    # execute md2ansi
     md2ansi <<<"$md"
   fi
-  [[ ! -t 0 ]] && md2ansi
-}
-
-_main "$@"
+  [[ -t 0 ]] && exit 0
+  # execute md2ansi for stdin stream data
+  md2ansi
 fi
+
 #fin
