@@ -92,6 +92,8 @@ declare -nx _DATE=_TIMESTAMP[1]     \
             _TZ_code=_TIMESTAMP[4]  \
             _DAY=_TIMESTAMP[5]
 
+export OPENAI_API_KEY
+
 declare -- openai=$(command -v openai)
 declare -- man=$(command -v man)
 declare -- mdless=''
