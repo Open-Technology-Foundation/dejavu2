@@ -1,0 +1,3 @@
+#!/usr/bin/dash
+exec sudo --preserve-env /usr/share/dv2/dv2 /usr/share/dv2/agents/techlead/techlead.agent.dv2
+#fin
